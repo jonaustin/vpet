@@ -1,11 +1,32 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 )
 
+func setupTestFile(t *testing.T) func() {
+	// Create a temporary directory for test files
+	tmpDir, err := os.MkdirTemp("", "vpet-test")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+
+	// Set the test config path
+	testConfigPath = filepath.Join(tmpDir, "test-pet.json")
+
+	// Return cleanup function
+	return func() {
+		testConfigPath = "" // Reset the test path
+		os.RemoveAll(tmpDir)
+	}
+}
+
 func TestNewPet(t *testing.T) {
+	cleanup := setupTestFile(t)
+	defer cleanup()
 	pet := newPet()
 	
 	if pet.Name != defaultPetName {
@@ -30,6 +51,8 @@ func TestNewPet(t *testing.T) {
 }
 
 func TestPetStatUpdates(t *testing.T) {
+	cleanup := setupTestFile(t)
+	defer cleanup()
 	m := initialModel()
 	
 	// Test feeding
@@ -69,6 +92,8 @@ func TestPetStatUpdates(t *testing.T) {
 }
 
 func TestStatBoundaries(t *testing.T) {
+	cleanup := setupTestFile(t)
+	defer cleanup()
 	m := initialModel()
 	
 	// Test upper bounds
@@ -93,6 +118,8 @@ func TestStatBoundaries(t *testing.T) {
 }
 
 func TestTimeBasedUpdates(t *testing.T) {
+	cleanup := setupTestFile(t)
+	defer cleanup()
 	m := initialModel()
 	m.pet.LastSaved = time.Now().Add(-2 * time.Hour) // Set last saved to 2 hours ago
 	
@@ -105,6 +132,8 @@ func TestTimeBasedUpdates(t *testing.T) {
 }
 
 func TestGetStatus(t *testing.T) {
+	cleanup := setupTestFile(t)
+	defer cleanup()
 	pet := newPet()
 	
 	// Test sleeping status

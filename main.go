@@ -152,7 +152,12 @@ func newPet() Pet {
 }
 
 // loadState loads the pet's state from file or creates a new pet
+var testConfigPath string // Used for testing
+
 func getConfigPath() string {
+	if testConfigPath != "" {
+		return testConfigPath
+	}
 	configDir, err := os.UserHomeDir()
 	if err != nil {
 		fmt.Printf("Error getting home directory: %v\n", err)
