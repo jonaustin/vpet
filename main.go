@@ -168,23 +168,19 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tickMsg:
 		if !m.pet.Sleeping {
-			statsChanged := false
 			m.modifyStats(func(p *Pet) {
 				// Hunger decreases every hour
 				if int(time.Time(msg).Minute())%60 == 0 {
 					p.Hunger = max(p.Hunger-5, 0)
-					statsChanged = true
 				}
 				// Energy decreases every 2 hours
 				if int(time.Time(msg).Minute())%120 == 0 {
 					p.Energy = max(p.Energy-5, 0)
-					statsChanged = true
 				}
 				// Happiness affected by hunger and energy
 				if p.Hunger < 30 || p.Energy < 30 {
 					if int(time.Time(msg).Minute())%60 == 0 {
 						p.Happiness = max(p.Happiness-2, 0)
-						statsChanged = true
 					}
 				}
 			})
@@ -264,8 +260,7 @@ func max(a, b int) int {
 
 func main() {
 	p := tea.NewProgram(initialModel())
-	m, err := p.Run()
-	if err != nil {
+	if _, err := p.Run(); err != nil {
 		fmt.Printf("Alas, there's been an error: %v", err)
 		os.Exit(1)
 	}
