@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 
 # Get the current directory of the script
-CURRENT_DIR=$HOME/.tmux
+CURRENT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
 get_pet_status() {
   PET_FILE="$HOME/.config/tamagotchi/pet.json"
-  # if [ ! -f "$PET_FILE" ]; then
-  #   echo "😺"
-  #   return
-  # fi;
+  if [ ! -f "$PET_FILE" ]; then
+    echo "😺"
+    return
+  fi
 
   # Read the JSON file and extract status information
   SLEEPING=$(jq -r '.sleeping' "$PET_FILE")
@@ -30,9 +30,20 @@ get_pet_status() {
   fi
 }
 
-# Add pet status to tmux status-right
-CURRENT_STATUS_RIGHT=$(tmux show-option -gqv "status-right")
-tmux set-option -g status-right "#[fg=magenta]#{?client_prefix,#[reverse]prefix#[noreverse],}#[default] $(get_pet_status) $CURRENT_STATUS_RIGHT"
+update_status() {
+  while true; do
+    STATUS=$(get_pet_status)
+    CURRENT_STATUS_RIGHT=$(tmux show-option -gqv "status-right")
+    tmux set-option -g status-right "#[fg=magenta]#{?client_prefix,#[reverse]prefix#[noreverse],}#[default] $STATUS $CURRENT_STATUS_RIGHT"
+    sleep 60
+  done
+}
+
+# Start the update process in the background
+update_status &
+
+# Save the PID to a file so we can kill it later if needed
+echo $! > "$HOME/.config/tamagotchi/tmux_status.pid"
 
 # Update status every minute
 tmux set-option -g status-interval 60
