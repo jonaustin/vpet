@@ -34,19 +34,19 @@ func (m *model) modifyStats(f func(*Pet)) {
 // Pet state modification functions
 func (m *model) feed() {
 	m.modifyStats(func(p *Pet) {
+		p.Sleeping = false
 		p.Hunger = min(p.Hunger+30, 100)
 		p.Happiness = min(p.Happiness+10, 100)
 	})
 }
 
 func (m *model) play() {
-	if !m.pet.Sleeping {
-		m.modifyStats(func(p *Pet) {
-			p.Happiness = min(p.Happiness+30, 100)
-			p.Energy = max(p.Energy-20, 0)
-			p.Hunger = max(p.Hunger-10, 0)
-		})
-	}
+	m.modifyStats(func(p *Pet) {
+		p.Sleeping = false
+		p.Happiness = min(p.Happiness+30, 100)
+		p.Energy = max(p.Energy-20, 0)
+		p.Hunger = max(p.Hunger-10, 0)
+	})
 }
 
 func (m *model) toggleSleep() {
