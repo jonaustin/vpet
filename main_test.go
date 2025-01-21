@@ -102,7 +102,7 @@ func TestPetStatUpdates(t *testing.T) {
 func TestStatBoundaries(t *testing.T) {
 	cleanup := setupTestFile(t)
 	defer cleanup()
-	m := initialModel()
+	m := initialModel(nil)
 
 	// Test upper bounds
 	m.pet.Hunger = maxStat
@@ -147,7 +147,7 @@ func TestTimeBasedUpdates(t *testing.T) {
 func TestGetStatus(t *testing.T) {
 	cleanup := setupTestFile(t)
 	defer cleanup()
-	pet := newPet()
+	pet := newPet(nil)
 
 	// Test sleeping status
 	pet.Sleeping = true

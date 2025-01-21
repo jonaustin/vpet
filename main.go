@@ -205,7 +205,7 @@ func loadState() Pet {
 
 	data, err := os.ReadFile(configPath)
 	if err != nil {
-		return newPet()
+		return newPet(nil)
 	}
 
 	var pet Pet
