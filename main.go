@@ -252,7 +252,7 @@ func loadState() Pet {
 }
 
 func saveState(p Pet) {
-	p.LastSaved = time.Now()
+	p.LastSaved = timeNow()
 	data, err := json.MarshalIndent(p, "", "  ")
 	if err != nil {
 		fmt.Printf("Error saving state: %v\n", err)
