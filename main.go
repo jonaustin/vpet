@@ -20,9 +20,15 @@ type Pet struct {
 }
 
 type model struct {
-	pet     Pet
-	choice  int
+	pet      Pet
+	choice   int
 	quitting bool
+}
+
+// Helper function to modify stats and save immediately
+func (m *model) modifyStats(f func(*Pet)) {
+	f(&m.pet)
+	saveState(m.pet)
 }
 
 var (
@@ -138,16 +144,22 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "enter", " ":
 			switch m.choice {
 			case 0: // Feed
-				m.pet.Hunger = min(m.pet.Hunger+30, 100)
-				m.pet.Happiness = min(m.pet.Happiness+10, 100)
+				m.modifyStats(func(p *Pet) {
+					p.Hunger = min(p.Hunger+30, 100)
+					p.Happiness = min(p.Happiness+10, 100)
+				})
 			case 1: // Play
 				if !m.pet.Sleeping {
-					m.pet.Happiness = min(m.pet.Happiness+30, 100)
-					m.pet.Energy = max(m.pet.Energy-20, 0)
-					m.pet.Hunger = max(m.pet.Hunger-10, 0)
+					m.modifyStats(func(p *Pet) {
+						p.Happiness = min(p.Happiness+30, 100)
+						p.Energy = max(p.Energy-20, 0)
+						p.Hunger = max(p.Hunger-10, 0)
+					})
 				}
 			case 2: // Sleep
-				m.pet.Sleeping = !m.pet.Sleeping
+				m.modifyStats(func(p *Pet) {
+					p.Sleeping = !p.Sleeping
+				})
 			case 3: // Quit
 				m.quitting = true
 				return m, tea.Quit
@@ -156,27 +168,35 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tickMsg:
 		if !m.pet.Sleeping {
-			// Hunger decreases every hour
-			if int(time.Time(msg).Minute())%60 == 0 {
-				m.pet.Hunger = max(m.pet.Hunger-5, 0)
-			}
-			// Energy decreases every 2 hours
-			if int(time.Time(msg).Minute())%120 == 0 {
-				m.pet.Energy = max(m.pet.Energy-5, 0)
-			}
-			// Happiness affected by hunger and energy
-			if m.pet.Hunger < 30 || m.pet.Energy < 30 {
+			statsChanged := false
+			m.modifyStats(func(p *Pet) {
+				// Hunger decreases every hour
 				if int(time.Time(msg).Minute())%60 == 0 {
-					m.pet.Happiness = max(m.pet.Happiness-2, 0)
+					p.Hunger = max(p.Hunger-5, 0)
+					statsChanged = true
 				}
-			}
+				// Energy decreases every 2 hours
+				if int(time.Time(msg).Minute())%120 == 0 {
+					p.Energy = max(p.Energy-5, 0)
+					statsChanged = true
+				}
+				// Happiness affected by hunger and energy
+				if p.Hunger < 30 || p.Energy < 30 {
+					if int(time.Time(msg).Minute())%60 == 0 {
+						p.Happiness = max(p.Happiness-2, 0)
+						statsChanged = true
+					}
+				}
+			})
 		} else {
 			// Sleeping recovers energy faster
 			if int(time.Time(msg).Minute())%60 == 0 {
-				m.pet.Energy = min(m.pet.Energy+10, 100)
-				if m.pet.Energy >= 100 {
-					m.pet.Sleeping = false
-				}
+				m.modifyStats(func(p *Pet) {
+					p.Energy = min(p.Energy+10, 100)
+					if p.Energy >= 100 {
+						p.Sleeping = false
+					}
+				})
 			}
 		}
 		return m, tick()
@@ -250,8 +270,4 @@ func main() {
 		os.Exit(1)
 	}
 	
-	// Save state when quitting
-	if m, ok := m.(model); ok && m.quitting {
-		saveState(m.pet)
-	}
 }
