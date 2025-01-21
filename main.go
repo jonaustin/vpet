@@ -288,7 +288,7 @@ func (m model) View() string {
 	s += gameStyles.status.Render(fmt.Sprintf("%-10s %s\n\n", "Status:", getStatus(m.pet)))
 
 	// Menu display
-	choices := []string{"Play", "Feed", "Sleep", "Quit"}
+	choices := []string{"Feed", "Play", "Sleep", "Quit"}
 	for i, choice := range choices {
 		cursor := " "
 		if m.choice == i {
