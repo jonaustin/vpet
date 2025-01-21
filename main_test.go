@@ -151,24 +151,42 @@ func TestTimeBasedUpdates(t *testing.T) {
 	pet := newPet(testCfg)
 	saveState(pet)
 
+	// Fix the LastSaved time in the saved file
+	data, err := os.ReadFile(testConfigPath)
+	if err != nil {
+		t.Fatalf("Failed to read test file: %v", err)
+	}
+	var savedPet Pet
+	if err := json.Unmarshal(data, &savedPet); err != nil {
+		t.Fatalf("Failed to parse test file: %v", err)
+	}
+	savedPet.LastSaved = twoHoursAgo
+	data, err = json.MarshalIndent(savedPet, "", "  ")
+	if err != nil {
+		t.Fatalf("Failed to marshal pet: %v", err)
+	}
+	if err := os.WriteFile(testConfigPath, data, 0644); err != nil {
+		t.Fatalf("Failed to write test file: %v", err)
+	}
+
 	// Load state which will process the elapsed time
-	// loadedPet := loadState()
-	//
-	// // Verify stats decreased appropriately for 2 hours
-	// expectedHunger := maxStat - (2 * hungerDecreaseRate) // 2 hours * 5 per hour = 10 decrease
-	// if loadedPet.Hunger != expectedHunger {
-	// 	t.Errorf("Expected hunger to be %d after 2 hours, got %d", expectedHunger, loadedPet.Hunger)
-	// }
-	//
-	// expectedEnergy := maxStat - energyDecreaseRate // 2 hours = 1 energy decrease
-	// if loadedPet.Energy != expectedEnergy {
-	// 	t.Errorf("Expected energy to be %d after 2 hours, got %d", expectedEnergy, loadedPet.Energy)
-	// }
-	//
-	// // Happiness shouldn't decrease since hunger and energy are still above threshold
-	// if loadedPet.Happiness != maxStat {
-	// 	t.Errorf("Expected happiness to stay at %d, got %d", maxStat, loadedPet.Happiness)
-	// }
+	loadedPet := loadState()
+
+	// Verify stats decreased appropriately for 2 hours
+	expectedHunger := maxStat - (2 * hungerDecreaseRate) // 2 hours * 5 per hour = 10 decrease
+	if loadedPet.Hunger != expectedHunger {
+		t.Errorf("Expected hunger to be %d after 2 hours, got %d", expectedHunger, loadedPet.Hunger)
+	}
+
+	expectedEnergy := maxStat - energyDecreaseRate // 2 hours = 1 energy decrease
+	if loadedPet.Energy != expectedEnergy {
+		t.Errorf("Expected energy to be %d after 2 hours, got %d", expectedEnergy, loadedPet.Energy)
+	}
+
+	// Happiness shouldn't decrease since hunger and energy are still above threshold
+	if loadedPet.Happiness != maxStat {
+		t.Errorf("Expected happiness to stay at %d, got %d", maxStat, loadedPet.Happiness)
+	}
 }
 
 func TestGetStatus(t *testing.T) {
