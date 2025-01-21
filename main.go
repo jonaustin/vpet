@@ -63,22 +63,22 @@ func loadState() Pet {
 	minutes := int(elapsed.Minutes()) % 60
 
 	if !pet.Sleeping {
-		// Hunger decreases every 15 minutes
-		hungerLoss := ((hours * 60) + minutes) / 15 * 5
+		// Hunger decreases every hour
+		hungerLoss := ((hours * 60) + minutes) / 60 * 5
 		pet.Hunger = max(pet.Hunger-hungerLoss, 0)
 
-		// Energy decreases every 30 minutes
-		energyLoss := ((hours * 60) + minutes) / 30 * 5
+		// Energy decreases every 2 hours
+		energyLoss := ((hours * 60) + minutes) / 120 * 5
 		pet.Energy = max(pet.Energy-energyLoss, 0)
 
 		// Happiness affected by low stats
 		if pet.Hunger < 30 || pet.Energy < 30 {
-			happinessLoss := ((hours * 60) + minutes) / 15 * 2
+			happinessLoss := ((hours * 60) + minutes) / 60 * 2
 			pet.Happiness = max(pet.Happiness-happinessLoss, 0)
 		}
 	} else {
 		// Sleeping recovers energy
-		energyGain := ((hours * 60) + minutes) / 15 * 10
+		energyGain := ((hours * 60) + minutes) / 60 * 10
 		pet.Energy = min(pet.Energy+energyGain, 100)
 		if pet.Energy >= 100 {
 			pet.Sleeping = false
@@ -156,21 +156,23 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tickMsg:
 		if !m.pet.Sleeping {
-			// Hunger decreases every 15 minutes
-			if int(time.Time(msg).Minute())%15 == 0 {
+			// Hunger decreases every hour
+			if int(time.Time(msg).Minute())%60 == 0 {
 				m.pet.Hunger = max(m.pet.Hunger-5, 0)
 			}
-			// Energy decreases every 30 minutes
-			if int(time.Time(msg).Minute())%30 == 0 {
+			// Energy decreases every 2 hours
+			if int(time.Time(msg).Minute())%120 == 0 {
 				m.pet.Energy = max(m.pet.Energy-5, 0)
 			}
 			// Happiness affected by hunger and energy
 			if m.pet.Hunger < 30 || m.pet.Energy < 30 {
-				m.pet.Happiness = max(m.pet.Happiness-2, 0)
+				if int(time.Time(msg).Minute())%60 == 0 {
+					m.pet.Happiness = max(m.pet.Happiness-2, 0)
+				}
 			}
 		} else {
 			// Sleeping recovers energy faster
-			if int(time.Time(msg).Minute())%15 == 0 {
+			if int(time.Time(msg).Minute())%60 == 0 {
 				m.pet.Energy = min(m.pet.Energy+10, 100)
 				if m.pet.Energy >= 100 {
 					m.pet.Sleeping = false
