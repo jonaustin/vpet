@@ -6,7 +6,7 @@
 CURRENT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
 get_pet_status() {
-  PET_FILE="$HOME/.config/tamagotchi/pet.json"
+  PET_FILE="$HOME/.config/vpet/pet.json"
   if [ ! -f "$PET_FILE" ]; then
     echo "😺"
     return
@@ -41,9 +41,9 @@ get_pet_status() {
 }
 
 # Kill any existing status update processes
-if [ -f "$HOME/.config/tamagotchi/tmux_status.pid" ]; then
-  pkill -F "$HOME/.config/tamagotchi/tmux_status.pid" 2>/dev/null
-  rm "$HOME/.config/tamagotchi/tmux_status.pid"
+if [ -f "$HOME/.config/vpet/tmux_status.pid" ]; then
+  pkill -F "$HOME/.config/vpet/tmux_status.pid" 2>/dev/null
+  rm "$HOME/.config/vpet/tmux_status.pid"
 fi
 
 # Set initial status
@@ -59,7 +59,7 @@ tmux set-option -g status-right "#[fg=magenta]#{?client_prefix,#[reverse]prefix#
 done) &
 
 # Save the PID to a file
-echo $! > "$HOME/.config/tamagotchi/tmux_status.pid"
+echo $! > "$HOME/.config/vpet/tmux_status.pid"
 
 # Update status every minute
 tmux set-option -g status-interval 60

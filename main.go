@@ -157,7 +157,7 @@ func getConfigPath() string {
 		fmt.Printf("Error getting home directory: %v\n", err)
 		os.Exit(1)
 	}
-	return filepath.Join(configDir, ".config", "tamagotchi", "pet.json")
+	return filepath.Join(configDir, ".config", "vpet", "pet.json")
 }
 
 func loadState() Pet {

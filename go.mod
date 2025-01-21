@@ -1,4 +1,4 @@
-module tamagotchi
+module vpet
 
 go 1.21
 
