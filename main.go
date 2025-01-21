@@ -59,18 +59,27 @@ func loadState() Pet {
 
 	// Calculate state changes based on elapsed time
 	elapsed := time.Since(pet.LastSaved)
-	minutes := int(elapsed.Minutes())
+	hours := int(elapsed.Hours())
+	minutes := int(elapsed.Minutes()) % 60
 
 	if !pet.Sleeping {
-		// Reduce stats based on elapsed minutes
-		pet.Hunger = max(pet.Hunger-minutes, 0)
-		pet.Energy = max(pet.Energy-minutes, 0)
+		// Hunger decreases every 15 minutes
+		hungerLoss := ((hours * 60) + minutes) / 15 * 5
+		pet.Hunger = max(pet.Hunger-hungerLoss, 0)
+
+		// Energy decreases every 30 minutes
+		energyLoss := ((hours * 60) + minutes) / 30 * 5
+		pet.Energy = max(pet.Energy-energyLoss, 0)
+
+		// Happiness affected by low stats
 		if pet.Hunger < 30 || pet.Energy < 30 {
-			pet.Happiness = max(pet.Happiness-minutes, 0)
+			happinessLoss := ((hours * 60) + minutes) / 15 * 2
+			pet.Happiness = max(pet.Happiness-happinessLoss, 0)
 		}
 	} else {
-		// If sleeping, recover energy
-		pet.Energy = min(pet.Energy+minutes*2, 100)
+		// Sleeping recovers energy
+		energyGain := ((hours * 60) + minutes) / 15 * 10
+		pet.Energy = min(pet.Energy+energyGain, 100)
 		if pet.Energy >= 100 {
 			pet.Sleeping = false
 		}
@@ -104,7 +113,7 @@ func (m model) Init() tea.Cmd {
 }
 
 func tick() tea.Cmd {
-	return tea.Tick(time.Second, func(t time.Time) tea.Msg {
+	return tea.Tick(time.Minute, func(t time.Time) tea.Msg {
 		return tickMsg(t)
 	})
 }
@@ -147,15 +156,25 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tickMsg:
 		if !m.pet.Sleeping {
-			m.pet.Hunger = max(m.pet.Hunger-1, 0)
-			m.pet.Energy = max(m.pet.Energy-1, 0)
+			// Hunger decreases every 15 minutes
+			if int(time.Time(msg).Minute())%15 == 0 {
+				m.pet.Hunger = max(m.pet.Hunger-5, 0)
+			}
+			// Energy decreases every 30 minutes
+			if int(time.Time(msg).Minute())%30 == 0 {
+				m.pet.Energy = max(m.pet.Energy-5, 0)
+			}
+			// Happiness affected by hunger and energy
 			if m.pet.Hunger < 30 || m.pet.Energy < 30 {
-				m.pet.Happiness = max(m.pet.Happiness-1, 0)
+				m.pet.Happiness = max(m.pet.Happiness-2, 0)
 			}
 		} else {
-			m.pet.Energy = min(m.pet.Energy+2, 100)
-			if m.pet.Energy >= 100 {
-				m.pet.Sleeping = false
+			// Sleeping recovers energy faster
+			if int(time.Time(msg).Minute())%15 == 0 {
+				m.pet.Energy = min(m.pet.Energy+10, 100)
+				if m.pet.Energy >= 100 {
+					m.pet.Sleeping = false
+				}
 			}
 		}
 		return m, tick()
