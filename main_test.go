@@ -27,7 +27,7 @@ func setupTestFile(t *testing.T) func() {
 func TestNewPet(t *testing.T) {
 	cleanup := setupTestFile(t)
 	defer cleanup()
-	pet := newPet()
+	pet := newPet(nil)
 
 	if pet.Name != defaultPetName {
 		t.Errorf("Expected pet name to be %s, got %s", defaultPetName, pet.Name)
@@ -53,7 +53,15 @@ func TestNewPet(t *testing.T) {
 func TestPetStatUpdates(t *testing.T) {
 	cleanup := setupTestFile(t)
 	defer cleanup()
-	m := initialModel()
+	
+	testCfg := &TestConfig{
+		InitialHunger:    50,  // Start with lower hunger
+		InitialHappiness: 50,  // Start with lower happiness
+		InitialEnergy:    100, // Start with full energy
+		IsSleeping:       false,
+		LastSavedTime:    time.Now(),
+	}
+	m := initialModel(testCfg)
 
 	// Test feeding
 	originalHunger := m.pet.Hunger
@@ -120,11 +128,16 @@ func TestStatBoundaries(t *testing.T) {
 func TestTimeBasedUpdates(t *testing.T) {
 	cleanup := setupTestFile(t)
 	defer cleanup()
-	m := initialModel()
-	m.pet.LastSaved = time.Now().Add(-2 * time.Hour) // Set last saved to 2 hours ago
-
-	// Load state which will process the elapsed time
-	m.pet = loadState()
+	
+	twoHoursAgo := time.Now().Add(-2 * time.Hour)
+	testCfg := &TestConfig{
+		InitialHunger:    100,
+		InitialHappiness: 100,
+		InitialEnergy:    100,
+		IsSleeping:       false,
+		LastSavedTime:    twoHoursAgo,
+	}
+	m := initialModel(testCfg)
 
 	if m.pet.Hunger >= maxStat {
 		t.Error("Hunger should have decreased after 2 hours")

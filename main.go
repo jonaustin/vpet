@@ -139,8 +139,27 @@ var (
 	}
 )
 
-// newPet creates a new pet with default values
-func newPet() Pet {
+// TestConfig allows overriding default values for testing
+type TestConfig struct {
+	InitialHunger    int
+	InitialHappiness int
+	InitialEnergy    int
+	IsSleeping       bool
+	LastSavedTime    time.Time
+}
+
+// newPet creates a new pet with default values or test values if provided
+func newPet(testCfg *TestConfig) Pet {
+	if testCfg != nil {
+		return Pet{
+			Name:      defaultPetName,
+			Hunger:    testCfg.InitialHunger,
+			Happiness: testCfg.InitialHappiness,
+			Energy:    testCfg.InitialEnergy,
+			Sleeping:  testCfg.IsSleeping,
+			LastSaved: testCfg.LastSavedTime,
+		}
+	}
 	return Pet{
 		Name:      defaultPetName,
 		Hunger:    maxStat,
@@ -242,9 +261,15 @@ func saveState(p Pet) {
 	}
 }
 
-func initialModel() model {
+func initialModel(testCfg *TestConfig) model {
+	var pet Pet
+	if testCfg != nil {
+		pet = newPet(testCfg)
+	} else {
+		pet = loadState()
+	}
 	return model{
-		pet:    loadState(),
+		pet:    pet,
 		choice: 0,
 	}
 }
@@ -374,7 +399,7 @@ func main() {
 		return
 	}
 
-	p := tea.NewProgram(initialModel())
+	p := tea.NewProgram(initialModel(nil))
 	if _, err := p.Run(); err != nil {
 		fmt.Printf("Alas, there's been an error: %v", err)
 		os.Exit(1)
