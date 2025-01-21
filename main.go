@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -150,8 +151,25 @@ func newPet() Pet {
 }
 
 // loadState loads the pet's state from file or creates a new pet
+func getConfigPath() string {
+	configDir, err := os.UserHomeDir()
+	if err != nil {
+		fmt.Printf("Error getting home directory: %v\n", err)
+		os.Exit(1)
+	}
+	return filepath.Join(configDir, ".config", "tamagotchi", "pet.json")
+}
+
 func loadState() Pet {
-	data, err := os.ReadFile("pet.json")
+	configPath := getConfigPath()
+	// Ensure config directory exists
+	configDir := filepath.Dir(configPath)
+	if err := os.MkdirAll(configDir, 0755); err != nil {
+		fmt.Printf("Error creating config directory: %v\n", err)
+		os.Exit(1)
+	}
+
+	data, err := os.ReadFile(configPath)
 	if err != nil {
 		return newPet()
 	}
@@ -204,7 +222,7 @@ func saveState(p Pet) {
 		fmt.Printf("Error saving state: %v\n", err)
 		return
 	}
-	if err := os.WriteFile("pet.json", data, 0644); err != nil {
+	if err := os.WriteFile(getConfigPath(), data, 0644); err != nil {
 		fmt.Printf("Error writing state: %v\n", err)
 	}
 }
