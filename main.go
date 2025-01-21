@@ -125,6 +125,8 @@ func (m *model) updateHourlyStats(t time.Time) {
 }
 
 var (
+	timeNow = time.Now // Allow mocking time.Now for tests
+
 	gameStyles = styles{
 		title: lipgloss.NewStyle().
 			Bold(true).
@@ -166,7 +168,7 @@ func newPet(testCfg *TestConfig) Pet {
 		Happiness: maxStat,
 		Energy:    maxStat,
 		Sleeping:  false,
-		LastSaved: time.Now(),
+		LastSaved: timeNow(),
 	}
 }
 
@@ -215,7 +217,7 @@ func loadState() Pet {
 	}
 
 	// Update stats based on elapsed time
-	elapsed := time.Since(pet.LastSaved)
+	elapsed := timeNow().Sub(pet.LastSaved)
 	totalMinutes := int(elapsed.Hours())*60 + int(elapsed.Minutes())%60
 
 	// Calculate hunger decrease
@@ -245,7 +247,7 @@ func loadState() Pet {
 		pet.Happiness = max(pet.Happiness-happinessLoss, minStat)
 	}
 
-	pet.LastSaved = time.Now()
+	pet.LastSaved = timeNow()
 	return pet
 }
 
