@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -350,10 +351,18 @@ func max(a, b int) int {
 }
 
 func main() {
+	updateOnly := flag.Bool("u", false, "Update pet stats only, don't run UI")
+	flag.Parse()
+
+	if *updateOnly {
+		pet := loadState() // This already updates based on elapsed time
+		saveState(pet)     // Save the updated stats
+		return
+	}
+
 	p := tea.NewProgram(initialModel())
 	if _, err := p.Run(); err != nil {
 		fmt.Printf("Alas, there's been an error: %v", err)
 		os.Exit(1)
 	}
-
 }
