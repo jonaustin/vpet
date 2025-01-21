@@ -31,6 +31,61 @@ func (m *model) modifyStats(f func(*Pet)) {
 	saveState(m.pet)
 }
 
+// Pet state modification functions
+func (m *model) feed() {
+	m.modifyStats(func(p *Pet) {
+		p.Hunger = min(p.Hunger+30, 100)
+		p.Happiness = min(p.Happiness+10, 100)
+	})
+}
+
+func (m *model) play() {
+	if !m.pet.Sleeping {
+		m.modifyStats(func(p *Pet) {
+			p.Happiness = min(p.Happiness+30, 100)
+			p.Energy = max(p.Energy-20, 0)
+			p.Hunger = max(p.Hunger-10, 0)
+		})
+	}
+}
+
+func (m *model) toggleSleep() {
+	m.modifyStats(func(p *Pet) {
+		p.Sleeping = !p.Sleeping
+	})
+}
+
+func (m *model) updateHourlyStats(t time.Time) {
+	if !m.pet.Sleeping {
+		m.modifyStats(func(p *Pet) {
+			// Hunger decreases every hour
+			if int(t.Minute())%60 == 0 {
+				p.Hunger = max(p.Hunger-5, 0)
+			}
+			// Energy decreases every 2 hours
+			if int(t.Minute())%120 == 0 {
+				p.Energy = max(p.Energy-5, 0)
+			}
+			// Happiness affected by hunger and energy
+			if p.Hunger < 30 || p.Energy < 30 {
+				if int(t.Minute())%60 == 0 {
+					p.Happiness = max(p.Happiness-2, 0)
+				}
+			}
+		})
+	} else {
+		// Sleeping recovers energy faster
+		if int(t.Minute())%60 == 0 {
+			m.modifyStats(func(p *Pet) {
+				p.Energy = min(p.Energy+10, 100)
+				if p.Energy >= 100 {
+					p.Sleeping = false
+				}
+			})
+		}
+	}
+}
+
 var (
 	titleStyle = lipgloss.NewStyle().
 			Bold(true).
@@ -144,22 +199,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "enter", " ":
 			switch m.choice {
 			case 0: // Feed
-				m.modifyStats(func(p *Pet) {
-					p.Hunger = min(p.Hunger+30, 100)
-					p.Happiness = min(p.Happiness+10, 100)
-				})
+				m.feed()
 			case 1: // Play
-				if !m.pet.Sleeping {
-					m.modifyStats(func(p *Pet) {
-						p.Happiness = min(p.Happiness+30, 100)
-						p.Energy = max(p.Energy-20, 0)
-						p.Hunger = max(p.Hunger-10, 0)
-					})
-				}
+				m.play()
 			case 2: // Sleep
-				m.modifyStats(func(p *Pet) {
-					p.Sleeping = !p.Sleeping
-				})
+				m.toggleSleep()
 			case 3: // Quit
 				m.quitting = true
 				return m, tea.Quit
@@ -167,34 +211,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case tickMsg:
-		if !m.pet.Sleeping {
-			m.modifyStats(func(p *Pet) {
-				// Hunger decreases every hour
-				if int(time.Time(msg).Minute())%60 == 0 {
-					p.Hunger = max(p.Hunger-5, 0)
-				}
-				// Energy decreases every 2 hours
-				if int(time.Time(msg).Minute())%120 == 0 {
-					p.Energy = max(p.Energy-5, 0)
-				}
-				// Happiness affected by hunger and energy
-				if p.Hunger < 30 || p.Energy < 30 {
-					if int(time.Time(msg).Minute())%60 == 0 {
-						p.Happiness = max(p.Happiness-2, 0)
-					}
-				}
-			})
-		} else {
-			// Sleeping recovers energy faster
-			if int(time.Time(msg).Minute())%60 == 0 {
-				m.modifyStats(func(p *Pet) {
-					p.Energy = min(p.Energy+10, 100)
-					if p.Energy >= 100 {
-						p.Sleeping = false
-					}
-				})
-			}
-		}
+		m.updateHourlyStats(time.Time(msg))
 		return m, tick()
 	}
 
