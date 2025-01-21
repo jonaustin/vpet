@@ -14,18 +14,18 @@ import (
 
 // Game constants
 const (
-	defaultPetName = "Charm Pet"
-	maxStat       = 100
-	minStat       = 0
+	defaultPetName   = "Charm Pet"
+	maxStat          = 100
+	minStat          = 0
 	lowStatThreshold = 30
-	
+
 	// Stat change rates
 	hungerDecreaseRate    = 5
-	sleepingHungerRate    = 3  // 70% of normal rate
+	sleepingHungerRate    = 3 // 70% of normal rate
 	energyDecreaseRate    = 5
 	energyRecoveryRate    = 10
 	happinessDecreaseRate = 2
-	
+
 	feedHungerIncrease    = 30
 	feedHappinessIncrease = 10
 	playHappinessIncrease = 30
@@ -130,10 +130,10 @@ var (
 			Bold(true).
 			Foreground(lipgloss.Color("#FF75B5")).
 			MarginBottom(1),
-		
+
 		status: lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#FF75B5")),
-		
+
 		menu: lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#FF75B5")),
 	}
@@ -163,7 +163,16 @@ func getConfigPath() string {
 		fmt.Printf("Error getting home directory: %v\n", err)
 		os.Exit(1)
 	}
-	return filepath.Join(configDir, ".config", "vpet", "pet.json")
+
+	configPath := filepath.Join(configDir, ".config", "vpet", "pet.json")
+	dirPath := filepath.Dir(configPath)
+
+	if err := os.MkdirAll(dirPath, 0755); err != nil {
+		fmt.Printf("Error creating config directory: %v\n", err)
+		os.Exit(1)
+	}
+
+	return configPath
 }
 
 func loadState() Pet {
