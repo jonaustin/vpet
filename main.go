@@ -218,7 +218,7 @@ func loadState() Pet {
 
 	// Update stats based on elapsed time
 	elapsed := timeNow().Sub(pet.LastSaved)
-	totalMinutes := int(elapsed.Hours())*60 + int(elapsed.Minutes())%60
+	totalMinutes := int(elapsed.Minutes())
 
 	// Calculate hunger decrease
 	hungerRate := hungerDecreaseRate
