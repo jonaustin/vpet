@@ -10,6 +10,28 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
+// Game constants
+const (
+	defaultPetName = "Charm Pet"
+	maxStat       = 100
+	minStat       = 0
+	lowStatThreshold = 30
+	
+	// Stat change rates
+	hungerDecreaseRate    = 5
+	sleepingHungerRate    = 3  // 70% of normal rate
+	energyDecreaseRate    = 5
+	energyRecoveryRate    = 10
+	happinessDecreaseRate = 2
+	
+	feedHungerIncrease    = 30
+	feedHappinessIncrease = 10
+	playHappinessIncrease = 30
+	playEnergyDecrease    = 20
+	playHungerDecrease    = 10
+)
+
+// Pet represents the virtual pet's state
 type Pet struct {
 	Name      string    `json:"name"`
 	Hunger    int       `json:"hunger"`
@@ -19,10 +41,18 @@ type Pet struct {
 	LastSaved time.Time `json:"last_saved"`
 }
 
+// model represents the game state
 type model struct {
 	pet      Pet
 	choice   int
 	quitting bool
+}
+
+// UI styles
+type styles struct {
+	title  lipgloss.Style
+	status lipgloss.Style
+	menu   lipgloss.Style
 }
 
 // Helper function to modify stats and save immediately
@@ -32,20 +62,22 @@ func (m *model) modifyStats(f func(*Pet)) {
 }
 
 // Pet state modification functions
+// feed increases hunger and happiness
 func (m *model) feed() {
 	m.modifyStats(func(p *Pet) {
 		p.Sleeping = false
-		p.Hunger = min(p.Hunger+30, 100)
-		p.Happiness = min(p.Happiness+10, 100)
+		p.Hunger = min(p.Hunger+feedHungerIncrease, maxStat)
+		p.Happiness = min(p.Happiness+feedHappinessIncrease, maxStat)
 	})
 }
 
+// play increases happiness but decreases energy and hunger
 func (m *model) play() {
 	m.modifyStats(func(p *Pet) {
 		p.Sleeping = false
-		p.Happiness = min(p.Happiness+30, 100)
-		p.Energy = max(p.Energy-20, 0)
-		p.Hunger = max(p.Hunger-10, 0)
+		p.Happiness = min(p.Happiness+playHappinessIncrease, maxStat)
+		p.Energy = max(p.Energy-playEnergyDecrease, minStat)
+		p.Hunger = max(p.Hunger-playHungerDecrease, minStat)
 	})
 }
 
@@ -91,29 +123,37 @@ func (m *model) updateHourlyStats(t time.Time) {
 }
 
 var (
-	titleStyle = lipgloss.NewStyle().
+	gameStyles = styles{
+		title: lipgloss.NewStyle().
 			Bold(true).
 			Foreground(lipgloss.Color("#FF75B5")).
-			MarginBottom(1)
-
-	statusStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#FF75B5"))
-
-	menuStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#FF75B5"))
+			MarginBottom(1),
+		
+		status: lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#FF75B5")),
+		
+		menu: lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#FF75B5")),
+	}
 )
 
+// newPet creates a new pet with default values
+func newPet() Pet {
+	return Pet{
+		Name:      defaultPetName,
+		Hunger:    maxStat,
+		Happiness: maxStat,
+		Energy:    maxStat,
+		Sleeping:  false,
+		LastSaved: time.Now(),
+	}
+}
+
+// loadState loads the pet's state from file or creates a new pet
 func loadState() Pet {
 	data, err := os.ReadFile("pet.json")
 	if err != nil {
-		return Pet{
-			Name:      "Charm Pet",
-			Hunger:    100,
-			Happiness: 100,
-			Energy:    100,
-			Sleeping:  false,
-			LastSaved: time.Now(),
-		}
+		return newPet()
 	}
 
 	var pet Pet
@@ -122,36 +162,35 @@ func loadState() Pet {
 		os.Exit(1)
 	}
 
-	// Calculate state changes based on elapsed time
+	// Update stats based on elapsed time
 	elapsed := time.Since(pet.LastSaved)
-	hours := int(elapsed.Hours())
-	minutes := int(elapsed.Minutes()) % 60
+	totalMinutes := int(elapsed.Hours())*60 + int(elapsed.Minutes())%60
 
-	// Hunger decreases at 70% rate while sleeping
-	hungerRate := 5
+	// Calculate hunger decrease
+	hungerRate := hungerDecreaseRate
 	if pet.Sleeping {
-		hungerRate = 3 // 70% of 5 rounded down
+		hungerRate = sleepingHungerRate
 	}
-	hungerLoss := ((hours * 60) + minutes) / 60 * hungerRate
-	pet.Hunger = max(pet.Hunger-hungerLoss, 0)
+	hungerLoss := (totalMinutes / 60) * hungerRate
+	pet.Hunger = max(pet.Hunger-hungerLoss, minStat)
 
 	if !pet.Sleeping {
-		// Energy decreases every 2 hours when awake
-		energyLoss := ((hours * 60) + minutes) / 120 * 5
-		pet.Energy = max(pet.Energy-energyLoss, 0)
+		// Energy decreases when awake
+		energyLoss := (totalMinutes / 120) * energyDecreaseRate
+		pet.Energy = max(pet.Energy-energyLoss, minStat)
 	} else {
-		// Sleeping recovers energy
-		energyGain := ((hours * 60) + minutes) / 60 * 10
-		pet.Energy = min(pet.Energy+energyGain, 100)
-		if pet.Energy >= 100 {
+		// Energy recovers while sleeping
+		energyGain := (totalMinutes / 60) * energyRecoveryRate
+		pet.Energy = min(pet.Energy+energyGain, maxStat)
+		if pet.Energy >= maxStat {
 			pet.Sleeping = false
 		}
 	}
 
-	// Happiness affected by low stats
-	if pet.Hunger < 30 || pet.Energy < 30 {
-		happinessLoss := ((hours * 60) + minutes) / 60 * 2
-		pet.Happiness = max(pet.Happiness-happinessLoss, 0)
+	// Update happiness if stats are low
+	if pet.Hunger < lowStatThreshold || pet.Energy < lowStatThreshold {
+		happinessLoss := (totalMinutes / 60) * happinessDecreaseRate
+		pet.Happiness = max(pet.Happiness-happinessLoss, minStat)
 	}
 
 	pet.LastSaved = time.Now()
@@ -231,25 +270,34 @@ func (m model) View() string {
 		return "Thanks for playing!\n"
 	}
 
-	s := titleStyle.Render("😺 " + m.pet.Name + " 😺\n\n")
+	s := gameStyles.title.Render("😺 " + m.pet.Name + " 😺\n\n")
 
-	// Status
-	s += statusStyle.Render(fmt.Sprintf("Hunger:    %d%%\n", m.pet.Hunger))
-	s += statusStyle.Render(fmt.Sprintf("Happiness: %d%%\n", m.pet.Happiness))
-	s += statusStyle.Render(fmt.Sprintf("Energy:    %d%%\n", m.pet.Energy))
-	s += statusStyle.Render(fmt.Sprintf("Status:    %s\n\n", getStatus(m.pet)))
+	// Status display
+	stats := []struct {
+		name  string
+		value int
+	}{
+		{"Hunger", m.pet.Hunger},
+		{"Happiness", m.pet.Happiness},
+		{"Energy", m.pet.Energy},
+	}
 
-	// Menu
+	for _, stat := range stats {
+		s += gameStyles.status.Render(fmt.Sprintf("%-10s %d%%\n", stat.name+":", stat.value))
+	}
+	s += gameStyles.status.Render(fmt.Sprintf("%-10s %s\n\n", "Status:", getStatus(m.pet)))
+
+	// Menu display
 	choices := []string{"Play", "Feed", "Sleep", "Quit"}
 	for i, choice := range choices {
 		cursor := " "
 		if m.choice == i {
 			cursor = ">"
 		}
-		s += menuStyle.Render(fmt.Sprintf("%s %s\n", cursor, choice))
+		s += gameStyles.menu.Render(fmt.Sprintf("      %s %s\n", cursor, choice))
 	}
 
-	s += "\n" + statusStyle.Render("Use ↑/↓ to select, enter to confirm")
+	s += "\n" + gameStyles.status.Render("Use ↑/↓ to select, enter to confirm")
 	return s
 }
 
