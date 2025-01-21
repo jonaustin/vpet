@@ -145,7 +145,7 @@ func (m model) View() string {
 		return "Thanks for playing!\n"
 	}
 
-	s := titleStyle.Render("🐱 " + m.pet.Name + " 🐱\n\n")
+	s := titleStyle.Render("😺 " + m.pet.Name + " 😺\n\n")
 
 	// Status
 	s += statusStyle.Render(fmt.Sprintf("Hunger:    %d%%\n", m.pet.Hunger))
@@ -172,15 +172,15 @@ func getStatus(p Pet) string {
 		return "😴 Sleeping"
 	}
 	if p.Hunger < 30 {
-		return "😫 Hungry"
+		return "🙀 Hungry"
 	}
 	if p.Energy < 30 {
-		return "😩 Tired"
+		return "😾 Tired"
 	}
 	if p.Happiness < 30 {
-		return "😢 Sad"
+		return "😿 Sad"
 	}
-	return "😊 Happy"
+	return "😸 Happy"
 }
 
 func min(a, b int) int {
