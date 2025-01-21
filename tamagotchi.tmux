@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 
 # Get the current directory of the script
-CURRENT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+CURRENT_DIR=$HOME/.tmux
 
 get_pet_status() {
   PET_FILE="$HOME/.config/tamagotchi/pet.json"
-  if [ ! -f "$PET_FILE" ]; then
-    echo "😺"
-    return
-  fi
+  # if [ ! -f "$PET_FILE" ]; then
+  #   echo "😺"
+  #   return
+  # fi
 
   # Read the JSON file and extract status information
   SLEEPING=$(jq -r '.sleeping' "$PET_FILE")
