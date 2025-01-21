@@ -11,11 +11,12 @@ import (
 )
 
 type Pet struct {
-	Name      string `json:"name"`
-	Hunger    int    `json:"hunger"`
-	Happiness int    `json:"happiness"` 
-	Energy    int    `json:"energy"`
-	Sleeping  bool   `json:"sleeping"`
+	Name      string    `json:"name"`
+	Hunger    int       `json:"hunger"`
+	Happiness int       `json:"happiness"` 
+	Energy    int       `json:"energy"`
+	Sleeping  bool      `json:"sleeping"`
+	LastSaved time.Time `json:"last_saved"`
 }
 
 type model struct {
@@ -46,6 +47,7 @@ func loadState() Pet {
 			Happiness: 100,
 			Energy:    100,
 			Sleeping:  false,
+			LastSaved: time.Now(),
 		}
 	}
 
@@ -54,10 +56,32 @@ func loadState() Pet {
 		fmt.Printf("Error loading state: %v\n", err)
 		os.Exit(1)
 	}
+
+	// Calculate state changes based on elapsed time
+	elapsed := time.Since(pet.LastSaved)
+	minutes := int(elapsed.Minutes())
+
+	if !pet.Sleeping {
+		// Reduce stats based on elapsed minutes
+		pet.Hunger = max(pet.Hunger-minutes, 0)
+		pet.Energy = max(pet.Energy-minutes, 0)
+		if pet.Hunger < 30 || pet.Energy < 30 {
+			pet.Happiness = max(pet.Happiness-minutes, 0)
+		}
+	} else {
+		// If sleeping, recover energy
+		pet.Energy = min(pet.Energy+minutes*2, 100)
+		if pet.Energy >= 100 {
+			pet.Sleeping = false
+		}
+	}
+
+	pet.LastSaved = time.Now()
 	return pet
 }
 
 func saveState(p Pet) {
+	p.LastSaved = time.Now()
 	data, err := json.MarshalIndent(p, "", "  ")
 	if err != nil {
 		fmt.Printf("Error saving state: %v\n", err)
