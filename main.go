@@ -56,34 +56,34 @@ func (m *model) toggleSleep() {
 }
 
 func (m *model) updateHourlyStats(t time.Time) {
-	if !m.pet.Sleeping {
-		m.modifyStats(func(p *Pet) {
-			// Hunger decreases every hour
-			if int(t.Minute())%60 == 0 {
-				p.Hunger = max(p.Hunger-5, 0)
-			}
-			// Energy decreases every 2 hours
+	m.modifyStats(func(p *Pet) {
+		// Hunger always decreases every hour
+		if int(t.Minute())%60 == 0 {
+			p.Hunger = max(p.Hunger-5, 0)
+		}
+
+		if !p.Sleeping {
+			// Energy decreases every 2 hours when awake
 			if int(t.Minute())%120 == 0 {
 				p.Energy = max(p.Energy-5, 0)
 			}
-			// Happiness affected by hunger and energy
-			if p.Hunger < 30 || p.Energy < 30 {
-				if int(t.Minute())%60 == 0 {
-					p.Happiness = max(p.Happiness-2, 0)
-				}
-			}
-		})
-	} else {
-		// Sleeping recovers energy faster
-		if int(t.Minute())%60 == 0 {
-			m.modifyStats(func(p *Pet) {
+		} else {
+			// Sleeping recovers energy faster
+			if int(t.Minute())%60 == 0 {
 				p.Energy = min(p.Energy+10, 100)
 				if p.Energy >= 100 {
 					p.Sleeping = false
 				}
-			})
+			}
 		}
-	}
+
+		// Happiness affected by hunger and energy
+		if p.Hunger < 30 || p.Energy < 30 {
+			if int(t.Minute())%60 == 0 {
+				p.Happiness = max(p.Happiness-2, 0)
+			}
+		}
+	})
 }
 
 var (
@@ -123,20 +123,14 @@ func loadState() Pet {
 	hours := int(elapsed.Hours())
 	minutes := int(elapsed.Minutes()) % 60
 
-	if !pet.Sleeping {
-		// Hunger decreases every hour
-		hungerLoss := ((hours * 60) + minutes) / 60 * 5
-		pet.Hunger = max(pet.Hunger-hungerLoss, 0)
+	// Hunger always decreases every hour
+	hungerLoss := ((hours * 60) + minutes) / 60 * 5
+	pet.Hunger = max(pet.Hunger-hungerLoss, 0)
 
-		// Energy decreases every 2 hours
+	if !pet.Sleeping {
+		// Energy decreases every 2 hours when awake
 		energyLoss := ((hours * 60) + minutes) / 120 * 5
 		pet.Energy = max(pet.Energy-energyLoss, 0)
-
-		// Happiness affected by low stats
-		if pet.Hunger < 30 || pet.Energy < 30 {
-			happinessLoss := ((hours * 60) + minutes) / 60 * 2
-			pet.Happiness = max(pet.Happiness-happinessLoss, 0)
-		}
 	} else {
 		// Sleeping recovers energy
 		energyGain := ((hours * 60) + minutes) / 60 * 10
@@ -144,6 +138,12 @@ func loadState() Pet {
 		if pet.Energy >= 100 {
 			pet.Sleeping = false
 		}
+	}
+
+	// Happiness affected by low stats
+	if pet.Hunger < 30 || pet.Energy < 30 {
+		happinessLoss := ((hours * 60) + minutes) / 60 * 2
+		pet.Happiness = max(pet.Happiness-happinessLoss, 0)
 	}
 
 	pet.LastSaved = time.Now()
