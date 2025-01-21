@@ -2,16 +2,16 @@
 
 CURRENT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
-# Store the original status-right
-ORIGINAL_STATUS=$(tmux show-option -gqv "status-right")
+# Store the original status-left
+ORIGINAL_STATUS=$(tmux show-option -gqv "status-left")
 
 # Function to update status
 update_status() {
     local pet_status=$("$CURRENT_DIR/scripts/pet_status.sh")
     if [[ -z "$ORIGINAL_STATUS" ]]; then
-        tmux set-option -g status-right "$pet_status"
+        tmux set-option -g status-left "$pet_status"
     else
-        tmux set-option -g status-right "$pet_status $ORIGINAL_STATUS"
+        tmux set-option -g status-left "$pet_status $ORIGINAL_STATUS"
     fi
 }
 
@@ -28,7 +28,7 @@ update_status
 (
     while true; do
         update_status
-        sleep 60
+        sleep 5
     done
 ) &
 
@@ -36,4 +36,4 @@ update_status
 echo $! > "$HOME/.config/vpet/tmux_update.pid"
 
 # Ensure status updates frequently
-tmux set-option -g status-interval 60
+tmux set-option -g status-interval 5
