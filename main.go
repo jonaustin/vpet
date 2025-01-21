@@ -232,7 +232,7 @@ func (m model) View() string {
 	s += statusStyle.Render(fmt.Sprintf("Status:    %s\n\n", getStatus(m.pet)))
 
 	// Menu
-	choices := []string{"Feed", "Play", "Sleep", "Quit"}
+	choices := []string{"Play", "Feed", "Sleep", "Quit"}
 	for i, choice := range choices {
 		cursor := " "
 		if m.choice == i {
