@@ -13,7 +13,7 @@ import (
 type Pet struct {
 	Name      string    `json:"name"`
 	Hunger    int       `json:"hunger"`
-	Happiness int       `json:"happiness"` 
+	Happiness int       `json:"happiness"`
 	Energy    int       `json:"energy"`
 	Sleeping  bool      `json:"sleeping"`
 	LastSaved time.Time `json:"last_saved"`
@@ -33,15 +33,15 @@ func (m *model) modifyStats(f func(*Pet)) {
 
 var (
 	titleStyle = lipgloss.NewStyle().
-		Bold(true).
-		Foreground(lipgloss.Color("#FF75B5")).
-		MarginBottom(1)
+			Bold(true).
+			Foreground(lipgloss.Color("#FF75B5")).
+			MarginBottom(1)
 
 	statusStyle = lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#FF75B5"))
+			Foreground(lipgloss.Color("#FF75B5"))
 
 	menuStyle = lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#FF75B5"))
+			Foreground(lipgloss.Color("#FF75B5"))
 )
 
 func loadState() Pet {
@@ -269,5 +269,5 @@ func main() {
 		fmt.Printf("Alas, there's been an error: %v", err)
 		os.Exit(1)
 	}
-	
+
 }
