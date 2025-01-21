@@ -55,7 +55,7 @@ tmux set-option -g status-right "#[fg=magenta]#{?client_prefix,#[reverse]prefix#
 (while true; do
   STATUS=$(get_pet_status)
   tmux set-option -g status-right "#[fg=magenta]#{?client_prefix,#[reverse]prefix#[noreverse],}#[default] $STATUS $CURRENT_STATUS_RIGHT"
-  sleep 60
+  sleep 1
 done) &
 
 # Save the PID to a file
