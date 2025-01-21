@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"time"
@@ -10,11 +11,11 @@ import (
 )
 
 type Pet struct {
-	name      string
-	hunger    int
-	happiness int
-	energy    int
-	sleeping  bool
+	Name      string `json:"name"`
+	Hunger    int    `json:"hunger"`
+	Happiness int    `json:"happiness"` 
+	Energy    int    `json:"energy"`
+	Sleeping  bool   `json:"sleeping"`
 }
 
 type model struct {
@@ -36,15 +37,40 @@ var (
 		Foreground(lipgloss.Color("#FF75B5"))
 )
 
+func loadState() Pet {
+	data, err := os.ReadFile("pet.json")
+	if err != nil {
+		return Pet{
+			Name:      "Charm Pet",
+			Hunger:    100,
+			Happiness: 100,
+			Energy:    100,
+			Sleeping:  false,
+		}
+	}
+
+	var pet Pet
+	if err := json.Unmarshal(data, &pet); err != nil {
+		fmt.Printf("Error loading state: %v\n", err)
+		os.Exit(1)
+	}
+	return pet
+}
+
+func saveState(p Pet) {
+	data, err := json.MarshalIndent(p, "", "  ")
+	if err != nil {
+		fmt.Printf("Error saving state: %v\n", err)
+		return
+	}
+	if err := os.WriteFile("pet.json", data, 0644); err != nil {
+		fmt.Printf("Error writing state: %v\n", err)
+	}
+}
+
 func initialModel() model {
 	return model{
-		pet: Pet{
-			name:      "Charm Pet",
-			hunger:    100,
-			happiness: 100,
-			energy:    100,
-			sleeping:  false,
-		},
+		pet:    loadState(),
 		choice: 0,
 	}
 }
@@ -79,16 +105,16 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "enter", " ":
 			switch m.choice {
 			case 0: // Feed
-				m.pet.hunger = min(m.pet.hunger+30, 100)
-				m.pet.happiness = min(m.pet.happiness+10, 100)
+				m.pet.Hunger = min(m.pet.Hunger+30, 100)
+				m.pet.Happiness = min(m.pet.Happiness+10, 100)
 			case 1: // Play
-				if !m.pet.sleeping {
-					m.pet.happiness = min(m.pet.happiness+30, 100)
-					m.pet.energy = max(m.pet.energy-20, 0)
-					m.pet.hunger = max(m.pet.hunger-10, 0)
+				if !m.pet.Sleeping {
+					m.pet.Happiness = min(m.pet.Happiness+30, 100)
+					m.pet.Energy = max(m.pet.Energy-20, 0)
+					m.pet.Hunger = max(m.pet.Hunger-10, 0)
 				}
 			case 2: // Sleep
-				m.pet.sleeping = !m.pet.sleeping
+				m.pet.Sleeping = !m.pet.Sleeping
 			case 3: // Quit
 				m.quitting = true
 				return m, tea.Quit
@@ -96,16 +122,16 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case tickMsg:
-		if !m.pet.sleeping {
-			m.pet.hunger = max(m.pet.hunger-1, 0)
-			m.pet.energy = max(m.pet.energy-1, 0)
-			if m.pet.hunger < 30 || m.pet.energy < 30 {
-				m.pet.happiness = max(m.pet.happiness-1, 0)
+		if !m.pet.Sleeping {
+			m.pet.Hunger = max(m.pet.Hunger-1, 0)
+			m.pet.Energy = max(m.pet.Energy-1, 0)
+			if m.pet.Hunger < 30 || m.pet.Energy < 30 {
+				m.pet.Happiness = max(m.pet.Happiness-1, 0)
 			}
 		} else {
-			m.pet.energy = min(m.pet.energy+2, 100)
-			if m.pet.energy >= 100 {
-				m.pet.sleeping = false
+			m.pet.Energy = min(m.pet.Energy+2, 100)
+			if m.pet.Energy >= 100 {
+				m.pet.Sleeping = false
 			}
 		}
 		return m, tick()
@@ -119,12 +145,12 @@ func (m model) View() string {
 		return "Thanks for playing!\n"
 	}
 
-	s := titleStyle.Render("🐱 " + m.pet.name + " 🐱\n\n")
+	s := titleStyle.Render("🐱 " + m.pet.Name + " 🐱\n\n")
 
 	// Status
-	s += statusStyle.Render(fmt.Sprintf("Hunger:    %d%%\n", m.pet.hunger))
-	s += statusStyle.Render(fmt.Sprintf("Happiness: %d%%\n", m.pet.happiness))
-	s += statusStyle.Render(fmt.Sprintf("Energy:    %d%%\n", m.pet.energy))
+	s += statusStyle.Render(fmt.Sprintf("Hunger:    %d%%\n", m.pet.Hunger))
+	s += statusStyle.Render(fmt.Sprintf("Happiness: %d%%\n", m.pet.Happiness))
+	s += statusStyle.Render(fmt.Sprintf("Energy:    %d%%\n", m.pet.Energy))
 	s += statusStyle.Render(fmt.Sprintf("Status:    %s\n\n", getStatus(m.pet)))
 
 	// Menu
@@ -142,16 +168,16 @@ func (m model) View() string {
 }
 
 func getStatus(p Pet) string {
-	if p.sleeping {
+	if p.Sleeping {
 		return "😴 Sleeping"
 	}
-	if p.hunger < 30 {
+	if p.Hunger < 30 {
 		return "😫 Hungry"
 	}
-	if p.energy < 30 {
+	if p.Energy < 30 {
 		return "😩 Tired"
 	}
-	if p.happiness < 30 {
+	if p.Happiness < 30 {
 		return "😢 Sad"
 	}
 	return "😊 Happy"
@@ -173,8 +199,14 @@ func max(a, b int) int {
 
 func main() {
 	p := tea.NewProgram(initialModel())
-	if _, err := p.Run(); err != nil {
+	m, err := p.Run()
+	if err != nil {
 		fmt.Printf("Alas, there's been an error: %v", err)
 		os.Exit(1)
+	}
+	
+	// Save state when quitting
+	if m, ok := m.(model); ok && m.quitting {
+		saveState(m.pet)
 	}
 }
