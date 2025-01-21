@@ -2,7 +2,15 @@
 
 CURRENT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
-vpet_interpolation="#($CURRENT_DIR/scripts/pet_status.sh)"
-status_right=$(tmux show-option -gqv "status-right")
-tmux set-option -g status-right "$vpet_interpolation $status_right"
+# Get current status-right value
+current_status=$(tmux show-option -gqv "status-right")
+
+# Add our pet status to the beginning of status-right
+if [[ -z "$current_status" ]]; then
+    tmux set-option -g status-right "#($CURRENT_DIR/scripts/pet_status.sh)"
+else
+    tmux set-option -g status-right "#($CURRENT_DIR/scripts/pet_status.sh) $current_status"
+fi
+
+# Update every minute
 tmux set-option -g status-interval 60
