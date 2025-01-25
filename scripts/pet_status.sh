@@ -12,11 +12,18 @@ if ! command -v jq &> /dev/null; then
 fi
 
 # Read the JSON file and extract status information
-if ! SLEEPING=$(jq -r '.sleeping' "$PET_FILE" 2>/dev/null) || \
+if ! DEAD=$(jq -r '.dead' "$PET_FILE" 2>/dev/null) || \
+   ! SLEEPING=$(jq -r '.sleeping' "$PET_FILE" 2>/dev/null) || \
    ! HUNGER=$(jq -r '.hunger' "$PET_FILE" 2>/dev/null) || \
    ! ENERGY=$(jq -r '.energy' "$PET_FILE" 2>/dev/null) || \
    ! HAPPINESS=$(jq -r '.happiness' "$PET_FILE" 2>/dev/null); then
     echo "😺"
+    exit 0
+fi
+
+# Check death first
+if [ "$DEAD" = "true" ]; then
+    echo "💀"
     exit 0
 fi
 
