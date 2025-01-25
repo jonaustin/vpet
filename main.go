@@ -36,13 +36,13 @@ const (
 
 // Pet represents the virtual pet's state
 type Pet struct {
-	Name             string    `json:"name"`
-	Hunger           int       `json:"hunger"`
-	Happiness        int       `json:"happiness"`
-	Energy           int       `json:"energy"`
-	Sleeping         bool      `json:"sleeping"`
-	Dead             bool      `json:"dead"`
-	LastSaved        time.Time `json:"last_saved"`
+	Name              string     `json:"name"`
+	Hunger            int        `json:"hunger"`
+	Happiness         int        `json:"happiness"`
+	Energy            int        `json:"energy"`
+	Sleeping          bool       `json:"sleeping"`
+	Dead              bool       `json:"dead"`
+	LastSaved         time.Time  `json:"last_saved"`
 	CriticalStartTime *time.Time `json:"critical_start_time,omitempty"`
 }
 
@@ -223,7 +223,7 @@ func loadState() Pet {
 	now := timeNow()
 	elapsed := now.Sub(pet.LastSaved)
 	totalMinutes := int(elapsed.Minutes())
-	
+
 	// Check death condition first
 	if pet.Dead {
 		return pet
@@ -257,8 +257,8 @@ func loadState() Pet {
 	}
 
 	// Check if any critical stat is below threshold
-	inCriticalState := pet.Hunger < lowStatThreshold || 
-		pet.Happiness < lowStatThreshold || 
+	inCriticalState := pet.Hunger < lowStatThreshold ||
+		pet.Happiness < lowStatThreshold ||
 		pet.Energy < lowStatThreshold
 
 	// Track time in critical state
@@ -266,7 +266,7 @@ func loadState() Pet {
 		if pet.CriticalStartTime == nil {
 			pet.CriticalStartTime = &now
 		}
-		
+
 		// Check if been critical too long
 		if now.Sub(*pet.CriticalStartTime) > deathTimeThreshold {
 			pet.Dead = true
@@ -332,6 +332,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.choice++
 			}
 		case "enter", " ":
+			if m.pet.Dead {
+				return m, nil // Ignore input when dead
+			}
 			switch m.choice {
 			case 0: // Feed
 				m.feed()
@@ -361,7 +364,7 @@ func (m model) View() string {
 		s += gameStyles.status.Render("Press q to exit")
 		return s
 	}
-	
+
 	if m.quitting {
 		return "Thanks for playing!\n"
 	}
