@@ -218,32 +218,38 @@ func TestTimeBasedUpdates(t *testing.T) {
 func TestGetStatus(t *testing.T) {
 	cleanup := setupTestFile(t)
 	defer cleanup()
-	pet := newPet(nil)
 	
-	// Test dead status
-	pet.Dead = true
-	if status := getStatus(pet); status != "💀 Dead" {
-		t.Errorf("Expected dead status, got %s", status)
-	}
+	t.Run("Dead status", func(t *testing.T) {
+		pet := newPet(nil)
+		pet.Dead = true
+		if status := getStatus(pet); status != "💀 Dead" {
+			t.Errorf("Expected dead status, got %s", status)
+		}
+	})
 
-	// Test sleeping status
-	pet.Sleeping = true
-	if status := getStatus(pet); status != "😴 Sleeping" {
-		t.Errorf("Expected sleeping status, got %s", status)
-	}
+	t.Run("Sleeping status", func(t *testing.T) {
+		pet := newPet(nil)
+		pet.Sleeping = true
+		if status := getStatus(pet); status != "😴 Sleeping" {
+			t.Errorf("Expected sleeping status, got %s", status)
+		}
+	})
 
-	// Test hungry status
-	pet.Sleeping = false
-	pet.Hunger = lowStatThreshold - 1
-	if status := getStatus(pet); status != "🙀 Hungry" {
-		t.Errorf("Expected hungry status, got %s", status)
-	}
+	t.Run("Hungry status", func(t *testing.T) {
+		pet := newPet(nil)
+		pet.Hunger = lowStatThreshold - 1
+		if status := getStatus(pet); status != "🙀 Hungry" {
+			t.Errorf("Expected hungry status, got %s", status)
+		}
+	})
 
-	// Test happy status
-	pet.Hunger = maxStat
-	pet.Energy = maxStat
-	pet.Happiness = maxStat
-	if status := getStatus(pet); status != "😸 Happy" {
-		t.Errorf("Expected happy status, got %s", status)
-	}
+	t.Run("Happy status", func(t *testing.T) {
+		pet := newPet(nil)
+		pet.Hunger = maxStat
+		pet.Energy = maxStat
+		pet.Happiness = maxStat
+		if status := getStatus(pet); status != "😸 Happy" {
+			t.Errorf("Expected happy status, got %s", status)
+		}
+	})
 }
