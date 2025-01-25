@@ -249,6 +249,60 @@ func TestTimeBasedUpdates(t *testing.T) {
 	}
 }
 
+func TestIllnessSystem(t *testing.T) {
+	cleanup := setupTestFile(t)
+	defer cleanup()
+
+	t.Run("Develop illness", func(t *testing.T) {
+		// Create pet with low health
+		testCfg := &TestConfig{
+			Health:    40,
+			Illness:   false,
+			LastSavedTime: time.Now().Add(-1 * time.Hour),
+		}
+		pet := newPet(testCfg)
+		saveState(pet)
+
+		loadedPet := loadState()
+		if !loadedPet.Illness {
+			t.Error("Expected pet to develop illness with low health")
+		}
+	})
+
+	t.Run("Cure with medicine", func(t *testing.T) {
+		// Create sick pet
+		testCfg := &TestConfig{
+			Health:    40,
+			Illness:   true,
+		}
+		m := initialModel(testCfg)
+		m.administerMedicine()
+
+		if m.pet.Illness {
+			t.Error("Medicine should cure illness")
+		}
+		if m.pet.Health != 70 { // 40 + 30 medicine effect
+			t.Errorf("Expected health 70 after medicine, got %d", m.pet.Health)
+		}
+	})
+
+	t.Run("Prevent illness", func(t *testing.T) {
+		// Create healthy pet
+		testCfg := &TestConfig{
+			Health:    60,
+			Illness:   false,
+			LastSavedTime: time.Now().Add(-1 * time.Hour),
+		}
+		pet := newPet(testCfg)
+		saveState(pet)
+
+		loadedPet := loadState()
+		if loadedPet.Illness {
+			t.Error("Pet with health >50 shouldn't develop illness")
+		}
+	})
+}
+
 func TestGetStatus(t *testing.T) {
 	cleanup := setupTestFile(t)
 	defer cleanup()
