@@ -352,7 +352,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.play()
 			case 2: // Sleep
 				m.toggleSleep()
-			case 3: // Quit
+			case 3: // Medicine
+				m.administerMedicine()
+			case 4: // Discipline
+				m.discipline()
+			case 5: // Quit
 				m.quitting = true
 				return m, tea.Quit
 			}

@@ -29,9 +29,9 @@ func TestDeathConditions(t *testing.T) {
 	cleanup := setupTestFile(t)
 	defer cleanup()
 
-	// Create pet that has been critical for 25 hours
+	// Create pet that has been critical for 5 hours (new 4h threshold)
 	currentTime := time.Now()
-	criticalStart := currentTime.Add(-25 * time.Hour)
+	criticalStart := currentTime.Add(-5 * time.Hour)
 	testCfg := &TestConfig{
 		InitialHunger:    lowStatThreshold - 1,
 		InitialHappiness: lowStatThreshold - 1,
@@ -46,7 +46,10 @@ func TestDeathConditions(t *testing.T) {
 	loadedPet := loadState()
 
 	if !loadedPet.Dead {
-		t.Error("Expected pet to be dead after 24+ hours in critical state")
+		t.Error("Expected pet to be dead after 4+ hours in critical state")
+	}
+	if loadedPet.CauseOfDeath != "Neglect" {
+		t.Errorf("Expected death cause 'Neglect', got '%s'", loadedPet.CauseOfDeath)
 	}
 }
 
@@ -57,6 +60,19 @@ func TestNewPet(t *testing.T) {
 
 	if pet.Name != defaultPetName {
 		t.Errorf("Expected pet name to be %s, got %s", defaultPetName, pet.Name)
+	}
+	
+	if pet.Health != maxStat {
+		t.Errorf("Expected initial health to be %d, got %d", maxStat, pet.Health)
+	}
+	if pet.Age != 0 {
+		t.Errorf("Expected initial age to be 0, got %d", pet.Age)
+	}
+	if pet.LifeStage != 0 {
+		t.Errorf("Expected initial life stage to be 0, got %d", pet.LifeStage)
+	}
+	if pet.Illness {
+		t.Error("New pet should not be ill")
 	}
 
 	if pet.Hunger != maxStat {
@@ -84,8 +100,10 @@ func TestPetStatUpdates(t *testing.T) {
 		InitialHunger:    50,  // Start with lower hunger
 		InitialHappiness: 50,  // Start with lower happiness
 		InitialEnergy:    100, // Start with full energy
+		Health:           80,  // Start with suboptimal health
 		IsSleeping:       false,
 		LastSavedTime:    time.Now(),
+		Illness:         true, // Start with illness
 	}
 	m := initialModel(testCfg)
 
