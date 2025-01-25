@@ -186,7 +186,7 @@ func newPet(testCfg *TestConfig) Pet {
 			Hunger:     testCfg.InitialHunger,
 			Happiness:  testCfg.InitialHappiness,
 			Energy:     testCfg.InitialEnergy,
-			Health:     maxStat,
+			Health:     testCfg.Health,
 			Age:        0,
 			LifeStage:  0,
 			Sleeping:   testCfg.IsSleeping,
@@ -255,7 +255,12 @@ func loadState() Pet {
 	// Update stats based on elapsed time and check for death
 	now := timeNow()
 	elapsed := now.Sub(pet.LastSaved)
+	hoursElapsed := int(elapsed.Hours())
 	totalMinutes := int(elapsed.Minutes())
+	
+	// Update age and life stage
+	pet.Age += hoursElapsed
+	pet.LifeStage = min(pet.Age/ageStageThresholds, 2)
 
 	// Check death condition first
 	if pet.Dead {
@@ -289,10 +294,22 @@ func loadState() Pet {
 		pet.Happiness = max(pet.Happiness-happinessLoss, minStat)
 	}
 
+	// Calculate health degradation
+	healthLoss := hoursElapsed * healthDecreaseRate
+	if pet.Health > 0 {
+		pet.Health = max(pet.Health-healthLoss, 0)
+	}
+	
+	// Check for random illness when health is low
+	if pet.Health < 50 && !pet.Illness {
+		if rand.Float64() < illnessChance*hoursElapsed {
+			pet.Illness = true
+		}
+	}
+	
 	// Check if any critical stat is below threshold
-	inCriticalState := pet.Hunger < lowStatThreshold ||
-		pet.Happiness < lowStatThreshold ||
-		pet.Energy < lowStatThreshold
+	inCriticalState := pet.Health < 20 || pet.Hunger < 10 || 
+		pet.Happiness < 10 || pet.Energy < 10
 
 	// Track time in critical state
 	if inCriticalState {
@@ -303,6 +320,19 @@ func loadState() Pet {
 		// Check if been critical too long
 		if now.Sub(*pet.CriticalStartTime) > deathTimeThreshold {
 			pet.Dead = true
+			pet.CauseOfDeath = "Neglect"
+			
+			if pet.Hunger <= 0 {
+				pet.CauseOfDeath = "Starvation"
+			} else if pet.Illness {
+				pet.CauseOfDeath = "Sickness"
+			}
+		}
+		
+		// Check for natural death from old age
+		if pet.Age >= minNaturalLifespan && rand.Float64() < float64(pet.Age-minNaturalLifespan)/1000 {
+			pet.Dead = true
+			pet.CauseOfDeath = "Old Age"
 		}
 	} else {
 		pet.CriticalStartTime = nil // Reset if recovered
