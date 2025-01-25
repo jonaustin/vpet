@@ -14,11 +14,16 @@ import (
 
 // Game constants
 const (
-	defaultPetName     = "Charm Pet"
-	maxStat            = 100
-	minStat            = 0
-	lowStatThreshold   = 30
-	deathTimeThreshold = 24 * time.Hour // Time in critical state before death
+	defaultPetName      = "Charm Pet"
+	maxStat             = 100
+	minStat             = 0
+	lowStatThreshold    = 30
+	deathTimeThreshold  = 4 * time.Hour // Shorter Tamagotchi-style timer
+	healthDecreaseRate  = 5             // Health loss per hour in critical
+	ageStageThresholds  = 24            // Hours per life stage
+	illnessChance       = 0.1           // 10% chance per hour when health <50
+	medicineEffect      = 30            // Health restored by medicine
+	minNaturalLifespan  = 72            // Hours before natural death possible
 
 	// Stat change rates
 	hungerDecreaseRate    = 5
@@ -40,10 +45,15 @@ type Pet struct {
 	Hunger            int        `json:"hunger"`
 	Happiness         int        `json:"happiness"`
 	Energy            int        `json:"energy"`
+	Health            int        `json:"health"`  // New health metric
+	Age               int        `json:"age"`     // In hours
+	LifeStage         int        `json:"stage"`   // 0=baby, 1=child, 2=adult
 	Sleeping          bool       `json:"sleeping"`
 	Dead              bool       `json:"dead"`
+	CauseOfDeath      string     `json:"cause_of_death,omitempty"`
 	LastSaved         time.Time  `json:"last_saved"`
 	CriticalStartTime *time.Time `json:"critical_start_time,omitempty"`
+	Illness           bool       `json:"illness"` // Random sickness flag
 }
 
 // model represents the game state
