@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"math/rand"
 	"os"
 	"path/filepath"
 	"time"
@@ -302,7 +303,7 @@ func loadState() Pet {
 	
 	// Check for random illness when health is low
 	if pet.Health < 50 && !pet.Illness {
-		if rand.Float64() < illnessChance*hoursElapsed {
+		if rand.Float64() < illnessChance*float64(hoursElapsed) {
 			pet.Illness = true
 		}
 	}
