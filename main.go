@@ -77,7 +77,19 @@ func (m *model) modifyStats(f func(*Pet)) {
 }
 
 // Pet state modification functions
-// feed increases hunger and happiness
+func (m *model) administerMedicine() {
+	m.modifyStats(func(p *Pet) {
+		p.Illness = false
+		p.Health = min(p.Health+medicineEffect, maxStat)
+	})
+}
+
+func (m *model) discipline() {
+	m.modifyStats(func(p *Pet) {
+		p.Happiness = max(p.Happiness-10, minStat)
+		p.Hunger = max(p.Hunger-5, minStat)
+	})
+}
 func (m *model) feed() {
 	m.modifyStats(func(p *Pet) {
 		p.Sleeping = false
@@ -159,6 +171,9 @@ type TestConfig struct {
 	InitialHunger    int
 	InitialHappiness int
 	InitialEnergy    int
+	Health           int
+	Age              int
+	Illness          bool
 	IsSleeping       bool
 	LastSavedTime    time.Time
 }
