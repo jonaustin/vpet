@@ -182,21 +182,29 @@ type TestConfig struct {
 func newPet(testCfg *TestConfig) Pet {
 	if testCfg != nil {
 		return Pet{
-			Name:      defaultPetName,
-			Hunger:    testCfg.InitialHunger,
-			Happiness: testCfg.InitialHappiness,
-			Energy:    testCfg.InitialEnergy,
-			Sleeping:  testCfg.IsSleeping,
-			LastSaved: testCfg.LastSavedTime,
+			Name:       defaultPetName,
+			Hunger:     testCfg.InitialHunger,
+			Happiness:  testCfg.InitialHappiness,
+			Energy:     testCfg.InitialEnergy,
+			Health:     maxStat,
+			Age:        0,
+			LifeStage:  0,
+			Sleeping:   testCfg.IsSleeping,
+			LastSaved:  testCfg.LastSavedTime,
+			Illness:    false,
 		}
 	}
 	return Pet{
-		Name:      defaultPetName,
-		Hunger:    maxStat,
-		Happiness: maxStat,
-		Energy:    maxStat,
-		Sleeping:  false,
-		LastSaved: timeNow(),
+		Name:       defaultPetName,
+		Hunger:     maxStat,
+		Happiness:  maxStat,
+		Energy:     maxStat,
+		Health:     maxStat,
+		Age:        0,
+		LifeStage:  0,
+		Sleeping:   false,
+		LastSaved:  timeNow(),
+		Illness:    false,
 	}
 }
 

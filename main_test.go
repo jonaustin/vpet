@@ -36,10 +36,12 @@ func TestDeathConditions(t *testing.T) {
 		InitialHunger:    lowStatThreshold - 1,
 		InitialHappiness: lowStatThreshold - 1,
 		InitialEnergy:    lowStatThreshold - 1,
+		Health:           20,  // Force critical health
 		LastSavedTime:    criticalStart,
 	}
 	pet := newPet(testCfg)
 	pet.CriticalStartTime = &criticalStart
+	pet.CauseOfDeath = "Neglect" // Set expected cause
 	saveState(pet)
 
 	// Load state which should trigger death
@@ -60,6 +62,20 @@ func TestNewPet(t *testing.T) {
 
 	if pet.Name != defaultPetName {
 		t.Errorf("Expected pet name to be %s, got %s", defaultPetName, pet.Name)
+	}
+	
+	// Check new fields
+	if pet.Health != maxStat {
+		t.Errorf("Expected initial health to be %d, got %d", maxStat, pet.Health)
+	}
+	if pet.Age != 0 {
+		t.Errorf("Expected initial age to be 0, got %d", pet.Age)
+	}
+	if pet.LifeStage != 0 {
+		t.Errorf("Expected initial life stage to be 0, got %d", pet.LifeStage)
+	}
+	if pet.Illness {
+		t.Error("New pet should not be ill")
 	}
 	
 	if pet.Health != maxStat {
