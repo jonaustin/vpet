@@ -25,6 +25,31 @@ func setupTestFile(t *testing.T) func() {
 	}
 }
 
+func TestDeathConditions(t *testing.T) {
+	cleanup := setupTestFile(t)
+	defer cleanup()
+
+	// Create pet that has been critical for 25 hours
+	currentTime := time.Now()
+	criticalStart := currentTime.Add(-25 * time.Hour)
+	testCfg := &TestConfig{
+		InitialHunger:    lowStatThreshold - 1,
+		InitialHappiness: lowStatThreshold - 1,
+		InitialEnergy:    lowStatThreshold - 1,
+		LastSavedTime:    criticalStart,
+	}
+	pet := newPet(testCfg)
+	pet.CriticalStartTime = &criticalStart
+	saveState(pet)
+
+	// Load state which should trigger death
+	loadedPet := loadState()
+
+	if !loadedPet.Dead {
+		t.Error("Expected pet to be dead after 24+ hours in critical state")
+	}
+}
+
 func TestNewPet(t *testing.T) {
 	cleanup := setupTestFile(t)
 	defer cleanup()
@@ -194,6 +219,12 @@ func TestGetStatus(t *testing.T) {
 	cleanup := setupTestFile(t)
 	defer cleanup()
 	pet := newPet(nil)
+	
+	// Test dead status
+	pet.Dead = true
+	if status := getStatus(pet); status != "💀 Dead" {
+		t.Errorf("Expected dead status, got %s", status)
+	}
 
 	// Test sleeping status
 	pet.Sleeping = true

@@ -14,10 +14,11 @@ import (
 
 // Game constants
 const (
-	defaultPetName   = "Charm Pet"
-	maxStat          = 100
-	minStat          = 0
-	lowStatThreshold = 30
+	defaultPetName     = "Charm Pet"
+	maxStat            = 100
+	minStat            = 0
+	lowStatThreshold   = 30
+	deathTimeThreshold = 24 * time.Hour // Time in critical state before death
 
 	// Stat change rates
 	hungerDecreaseRate    = 5
@@ -35,12 +36,14 @@ const (
 
 // Pet represents the virtual pet's state
 type Pet struct {
-	Name      string    `json:"name"`
-	Hunger    int       `json:"hunger"`
-	Happiness int       `json:"happiness"`
-	Energy    int       `json:"energy"`
-	Sleeping  bool      `json:"sleeping"`
-	LastSaved time.Time `json:"last_saved"`
+	Name             string    `json:"name"`
+	Hunger           int       `json:"hunger"`
+	Happiness        int       `json:"happiness"`
+	Energy           int       `json:"energy"`
+	Sleeping         bool      `json:"sleeping"`
+	Dead             bool      `json:"dead"`
+	LastSaved        time.Time `json:"last_saved"`
+	CriticalStartTime *time.Time `json:"critical_start_time,omitempty"`
 }
 
 // model represents the game state
@@ -216,9 +219,15 @@ func loadState() Pet {
 		os.Exit(1)
 	}
 
-	// Update stats based on elapsed time
-	elapsed := timeNow().Sub(pet.LastSaved)
+	// Update stats based on elapsed time and check for death
+	now := timeNow()
+	elapsed := now.Sub(pet.LastSaved)
 	totalMinutes := int(elapsed.Minutes())
+	
+	// Check death condition first
+	if pet.Dead {
+		return pet
+	}
 
 	// Calculate hunger decrease
 	hungerRate := hungerDecreaseRate
@@ -247,7 +256,26 @@ func loadState() Pet {
 		pet.Happiness = max(pet.Happiness-happinessLoss, minStat)
 	}
 
-	pet.LastSaved = timeNow()
+	// Check if any critical stat is below threshold
+	inCriticalState := pet.Hunger < lowStatThreshold || 
+		pet.Happiness < lowStatThreshold || 
+		pet.Energy < lowStatThreshold
+
+	// Track time in critical state
+	if inCriticalState {
+		if pet.CriticalStartTime == nil {
+			pet.CriticalStartTime = &now
+		}
+		
+		// Check if been critical too long
+		if now.Sub(*pet.CriticalStartTime) > deathTimeThreshold {
+			pet.Dead = true
+		}
+	} else {
+		pet.CriticalStartTime = nil // Reset if recovered
+	}
+
+	pet.LastSaved = now
 	return pet
 }
 
@@ -326,6 +354,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) View() string {
+	if m.pet.Dead {
+		s := gameStyles.title.Render("💀 " + m.pet.Name + " 💀\n\n")
+		s += gameStyles.status.Render("Your pet has passed away...\n")
+		s += gameStyles.status.Render("It will be remembered forever.\n\n")
+		s += gameStyles.status.Render("Press q to exit")
+		return s
+	}
+	
 	if m.quitting {
 		return "Thanks for playing!\n"
 	}
@@ -362,6 +398,9 @@ func (m model) View() string {
 }
 
 func getStatus(p Pet) string {
+	if p.Dead {
+		return "💀 Dead"
+	}
 	if p.Sleeping {
 		return "😴 Sleeping"
 	}
