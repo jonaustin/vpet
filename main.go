@@ -303,13 +303,14 @@ func loadState() Pet {
 	
 	// Check for random illness when health is low
 	if pet.Health < 50 && !pet.Illness {
-		if rand.Float64() < illnessChance*float64(hoursElapsed) {
+		// Ensure at least 10% chance per test hour while keeping cumulative probability
+		if rand.Float64() < 1.0 - math.Pow(1.0 - illnessChance, float64(hoursElapsed)) {
 			pet.Illness = true
 		}
 	}
 	
 	// Check if any critical stat is below threshold
-	inCriticalState := pet.Health < 20 || pet.Hunger < 10 || 
+	inCriticalState := pet.Health <= 20 || pet.Hunger < 10 || 
 		pet.Happiness < 10 || pet.Energy < 10
 
 	// Track time in critical state
