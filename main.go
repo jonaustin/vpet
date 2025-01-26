@@ -127,24 +127,24 @@ func (m *model) toggleSleep() {
 func (m *model) updateHourlyStats(t time.Time) {
 	m.modifyStats(func(p *Pet) {
 		// Hunger decreases every hour (reduced rate while sleeping)
-		if int(t.Minute() )%60 == 0 {
-			hungerRate := 5
+		if int(t.Minute())%60 == 0 {
+			hungerRate := hungerDecreaseRate
 			if p.Sleeping {
-				hungerRate = 3 // 70% of 5 rounded down
+				hungerRate = sleepingHungerRate
 			}
-			p.Hunger = max(p.Hunger-hungerRate, 0)
+			p.Hunger = max(p.Hunger-hungerRate, minStat)
 		}
 
 		if !p.Sleeping {
 			// Energy decreases every 2 hours when awake
 			if int(t.Minute())%120 == 0 {
-				p.Energy = max(p.Energy-5, 0)
+				p.Energy = max(p.Energy-energyDecreaseRate, minStat)
 			}
 		} else {
 			// Sleeping recovers energy faster
 			if int(t.Minute())%60 == 0 {
-				p.Energy = min(p.Energy+10, 100)
-				if p.Energy >= 100 {
+				p.Energy = min(p.Energy+energyRecoveryRate, maxStat)
+				if p.Energy >= maxStat {
 					p.Sleeping = false
 				}
 			}
