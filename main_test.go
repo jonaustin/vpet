@@ -254,16 +254,24 @@ func TestIllnessSystem(t *testing.T) {
 	defer cleanup()
 
 	t.Run("Develop illness", func(t *testing.T) {
+		// Create deterministic random source for test
+		r := rand.New(rand.NewSource(1))
+		randFloat64 = r.Float64 // Override random for test
+		
 		// Create pet with low health
 		testCfg := &TestConfig{
-			Health:    40,
-			Illness:   false,
+			Health:        40,
+			Illness:       false,
 			LastSavedTime: time.Now().Add(-1 * time.Hour),
 		}
 		pet := newPet(testCfg)
 		saveState(pet)
 
-		loadedPet := loadState()
+		// Load with override of time.Now to match hour elapsed
+		loadedPet := func() Pet {
+			timeNow = func() time.Time { return testCfg.LastSavedTime.Add(time.Hour) }
+			return loadState()
+		}()
 		if !loadedPet.Illness {
 			t.Error("Expected pet to develop illness with low health")
 		}
