@@ -217,9 +217,13 @@ func newPet(testCfg *TestConfig) Pet {
 		LastSaved: timeNow(),
 		Illness:   false,
 	}
-	if testCfg == nil {
-		pet.LastStatus = getStatus(pet)
-	}
+	pet.LastStatus = getStatus(pet)
+	// Add initial log entry
+	pet.Logs = []LogEntry{{
+		Time:      timeNow(),
+		OldStatus: "",
+		NewStatus: pet.LastStatus,
+	}}
 	return pet
 }
 

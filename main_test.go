@@ -41,10 +41,26 @@ func TestDeathConditions(t *testing.T) {
 	}
 	pet := newPet(testCfg)
 	pet.CriticalStartTime = &criticalStart
-	pet.CauseOfDeath = "Neglect" // Set expected cause
 	saveState(pet)
 
-	// Load state which should trigger death
+	// Fix LastSaved time in file
+	data, err := os.ReadFile(testConfigPath)
+	if err != nil {
+		t.Fatalf("Failed to read test file: %v", err)
+	}
+	var savedPet Pet
+	if err := json.Unmarshal(data, &savedPet); err != nil {
+		t.Fatalf("Failed to parse test file: %v", err)
+	}
+	savedPet.LastSaved = criticalStart
+	data, err = json.MarshalIndent(savedPet, "", "  ")
+	if err != nil {
+		t.Fatalf("Failed to marshal pet: %v", err)
+	}
+	if err := os.WriteFile(testConfigPath, data, 0644); err != nil {
+		t.Fatalf("Failed to write test file: %v", err)
+	}
+
 	loadedPet := loadState()
 
 	if !loadedPet.Dead {
