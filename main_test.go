@@ -326,6 +326,23 @@ func TestIllnessSystem(t *testing.T) {
 			t.Error("Pet with health >50 shouldn't develop illness")
 		}
 	})
+
+	t.Run("Auto-heal from illness", func(t *testing.T) {
+		// Create sick pet that will recover
+		testCfg := &TestConfig{
+			Health:        40,
+			Illness:       true,
+			LastSavedTime: time.Now().Add(-1 * time.Hour),
+		}
+		pet := newPet(testCfg)
+		pet.Health = 60 // Set health to safe level
+		saveState(&pet)
+
+		loadedPet := loadState()
+		if loadedPet.Illness {
+			t.Error("Pet should automatically recover from illness when health >= 50")
+		}
+	})
 }
 
 func TestGetStatus(t *testing.T) {

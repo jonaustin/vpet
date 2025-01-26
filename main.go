@@ -318,6 +318,9 @@ func loadState() Pet {
 		if randFloat64() < illnessChance {
 			pet.Illness = true
 		}
+	} else if pet.Health >= 50 {
+		// Clear illness when health returns to safe levels
+		pet.Illness = false
 	}
 
 	// Calculate health degradation
