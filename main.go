@@ -305,8 +305,7 @@ func loadState() Pet {
 
 	// Check for random illness when health is low
 	if pet.Health < 50 && !pet.Illness {
-		// Ensure at least 10% chance per test hour while keeping cumulative probability
-		if randFloat64() < 1.0-math.Pow(1.0-illnessChance, float64(hoursElapsed)) {
+		if randFloat64() < illnessChance * float64(hoursElapsed) {
 			pet.Illness = true
 		}
 	}
