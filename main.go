@@ -205,6 +205,7 @@ func newPet(testCfg *TestConfig) Pet {
 			Illness:   testCfg.Illness,
 		}
 	}
+	now := timeNow()
 	pet := Pet{
 		Name:      defaultPetName,
 		Hunger:    maxStat,
@@ -214,13 +215,13 @@ func newPet(testCfg *TestConfig) Pet {
 		Age:       0,
 		LifeStage: 0,
 		Sleeping:  false,
-		LastSaved: timeNow(),
+		LastSaved: now,
 		Illness:   false,
 	}
 	pet.LastStatus = getStatus(pet)
 	// Add initial log entry
 	pet.Logs = []LogEntry{{
-		Time:      timeNow(),
+		Time:      now,
 		OldStatus: "",
 		NewStatus: pet.LastStatus,
 	}}
