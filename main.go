@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"math"
 	"math/rand"
 	"os"
 	"path/filepath"
@@ -15,16 +16,16 @@ import (
 
 // Game constants
 const (
-	defaultPetName      = "Charm Pet"
-	maxStat             = 100
-	minStat             = 0
-	lowStatThreshold    = 30
-	deathTimeThreshold  = 4 * time.Hour // Shorter Tamagotchi-style timer
-	healthDecreaseRate  = 5             // Health loss per hour in critical
-	ageStageThresholds  = 24            // Hours per life stage
-	illnessChance       = 0.1           // 10% chance per hour when health <50
-	medicineEffect      = 30            // Health restored by medicine
-	minNaturalLifespan  = 72            // Hours before natural death possible
+	defaultPetName     = "Charm Pet"
+	maxStat            = 100
+	minStat            = 0
+	lowStatThreshold   = 30
+	deathTimeThreshold = 4 * time.Hour // Shorter Tamagotchi-style timer
+	healthDecreaseRate = 5             // Health loss per hour in critical
+	ageStageThresholds = 24            // Hours per life stage
+	illnessChance      = 0.1           // 10% chance per hour when health <50
+	medicineEffect     = 30            // Health restored by medicine
+	minNaturalLifespan = 72            // Hours before natural death possible
 
 	// Stat change rates
 	hungerDecreaseRate    = 5
@@ -46,9 +47,9 @@ type Pet struct {
 	Hunger            int        `json:"hunger"`
 	Happiness         int        `json:"happiness"`
 	Energy            int        `json:"energy"`
-	Health            int        `json:"health"`  // New health metric
-	Age               int        `json:"age"`     // In hours
-	LifeStage         int        `json:"stage"`   // 0=baby, 1=child, 2=adult
+	Health            int        `json:"health"` // New health metric
+	Age               int        `json:"age"`    // In hours
+	LifeStage         int        `json:"stage"`  // 0=baby, 1=child, 2=adult
 	Sleeping          bool       `json:"sleeping"`
 	Dead              bool       `json:"dead"`
 	CauseOfDeath      string     `json:"cause_of_death,omitempty"`
@@ -183,29 +184,29 @@ type TestConfig struct {
 func newPet(testCfg *TestConfig) Pet {
 	if testCfg != nil {
 		return Pet{
-			Name:       defaultPetName,
-			Hunger:     testCfg.InitialHunger,
-			Happiness:  testCfg.InitialHappiness,
-			Energy:     testCfg.InitialEnergy,
-			Health:     testCfg.Health,
-			Age:        0,
-			LifeStage:  0,
-			Sleeping:   testCfg.IsSleeping,
-			LastSaved:  testCfg.LastSavedTime,
-			Illness:    false,
+			Name:      defaultPetName,
+			Hunger:    testCfg.InitialHunger,
+			Happiness: testCfg.InitialHappiness,
+			Energy:    testCfg.InitialEnergy,
+			Health:    testCfg.Health,
+			Age:       0,
+			LifeStage: 0,
+			Sleeping:  testCfg.IsSleeping,
+			LastSaved: testCfg.LastSavedTime,
+			Illness:   false,
 		}
 	}
 	return Pet{
-		Name:       defaultPetName,
-		Hunger:     maxStat,
-		Happiness:  maxStat,
-		Energy:     maxStat,
-		Health:     maxStat,
-		Age:        0,
-		LifeStage:  0,
-		Sleeping:   false,
-		LastSaved:  timeNow(),
-		Illness:    false,
+		Name:      defaultPetName,
+		Hunger:    maxStat,
+		Happiness: maxStat,
+		Energy:    maxStat,
+		Health:    maxStat,
+		Age:       0,
+		LifeStage: 0,
+		Sleeping:  false,
+		LastSaved: timeNow(),
+		Illness:   false,
 	}
 }
 
@@ -258,7 +259,7 @@ func loadState() Pet {
 	elapsed := now.Sub(pet.LastSaved)
 	hoursElapsed := int(elapsed.Hours())
 	totalMinutes := int(elapsed.Minutes())
-	
+
 	// Update age and life stage
 	pet.Age += hoursElapsed
 	pet.LifeStage = min(pet.Age/ageStageThresholds, 2)
@@ -300,17 +301,17 @@ func loadState() Pet {
 	if pet.Health > 0 {
 		pet.Health = max(pet.Health-healthLoss, 0)
 	}
-	
+
 	// Check for random illness when health is low
 	if pet.Health < 50 && !pet.Illness {
 		// Ensure at least 10% chance per test hour while keeping cumulative probability
-		if rand.Float64() < 1.0 - math.Pow(1.0 - illnessChance, float64(hoursElapsed)) {
+		if rand.Float64() < 1.0-math.Pow(1.0-illnessChance, float64(hoursElapsed)) {
 			pet.Illness = true
 		}
 	}
-	
+
 	// Check if any critical stat is below threshold
-	inCriticalState := pet.Health <= 20 || pet.Hunger < 10 || 
+	inCriticalState := pet.Health <= 20 || pet.Hunger < 10 ||
 		pet.Happiness < 10 || pet.Energy < 10
 
 	// Track time in critical state
@@ -323,14 +324,14 @@ func loadState() Pet {
 		if now.Sub(*pet.CriticalStartTime) > deathTimeThreshold {
 			pet.Dead = true
 			pet.CauseOfDeath = "Neglect"
-			
+
 			if pet.Hunger <= 0 {
 				pet.CauseOfDeath = "Starvation"
 			} else if pet.Illness {
 				pet.CauseOfDeath = "Sickness"
 			}
 		}
-		
+
 		// Check for natural death from old age
 		if pet.Age >= minNaturalLifespan && rand.Float64() < float64(pet.Age-minNaturalLifespan)/1000 {
 			pet.Dead = true
