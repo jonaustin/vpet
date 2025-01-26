@@ -277,6 +277,12 @@ func loadState() Pet {
 	hoursElapsed := int(elapsed.Hours())
 	totalMinutes := int(elapsed.Minutes())
 
+	// Store current status before updates
+	oldStatus := pet.LastStatus
+	if oldStatus == "" {
+		oldStatus = getStatus(pet)
+	}
+
 	// Update age and life stage
 	pet.Age += hoursElapsed
 	pet.LifeStage = min(pet.Age/ageStageThresholds, 2)
@@ -380,8 +386,9 @@ func saveState(p *Pet) {
 			NewStatus: currentStatus,
 		}
 		p.Logs = append(p.Logs, newLog)
-		p.LastStatus = currentStatus
 	}
+	// Always update LastStatus after checking for changes
+	p.LastStatus = currentStatus
 
 	p.LastSaved = timeNow()
 	data, err := json.MarshalIndent(p, "", "  ")
