@@ -393,7 +393,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.choice--
 			}
 		case "down", "j":
-			if m.choice < 3 {
+			if m.choice < 5 {
 				m.choice++
 			}
 		case "enter", " ":
