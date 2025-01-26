@@ -475,7 +475,7 @@ func (m model) View() string {
 			right = fmt.Sprintf("%-10s %s", stats[i+1].name+":", stats[i+1].value)
 		}
 		s += gameStyles.status.Render(
-			fmt.Sprintf("%-15s %-15s\n",
+			fmt.Sprintf("%-30s %s\n",
 				fmt.Sprintf("%-10s %s", left.name+":", left.value),
 				right,
 			))
