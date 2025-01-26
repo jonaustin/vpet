@@ -280,7 +280,7 @@ ow := timeNow()
 	if !pet.Sleeping {
 		// Energy decreases when awake
 		energyLoss := (totalMinutes / 120) * energyDecreaseRate
-		pet.Ener = max(pet.Energy-energyLoss, minStat)
+		pet.Energy = max(pet.Energy-energyLoss, minStat)
 	} else {
 		// Energy recovers while sleeping
 		energyGain := (totalMinutes / 60) * energyRecoveryRate
