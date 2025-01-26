@@ -193,7 +193,7 @@ func newPet(testCfg *TestConfig) Pet {
 			LifeStage: 0,
 			Sleeping:  testCfg.IsSleeping,
 			LastSaved: testCfg.LastSavedTime,
-			Illness:   false,
+			Illness:   testCfg.Illness,
 		}
 	}
 	return Pet{
