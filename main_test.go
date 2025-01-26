@@ -260,17 +260,19 @@ func TestIllnessSystem(t *testing.T) {
 		randFloat64 = r.Float64 // Override random for test
 		
 		// Create pet with low health
+		// Use fixed timestamps to ensure exact 1 hour difference
+		baseTime := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
 		testCfg := &TestConfig{
 			Health:        40,
 			Illness:       false,
-			LastSavedTime: time.Now().Add(-1 * time.Hour),
+			LastSavedTime: baseTime,
 		}
 		pet := newPet(testCfg)
 		saveState(pet)
 
-		// Load with override of time.Now to match hour elapsed
+		// Load with exact 1 hour later time
 		loadedPet := func() Pet {
-			timeNow = func() time.Time { return testCfg.LastSavedTime.Add(time.Hour) }
+			timeNow = func() time.Time { return baseTime.Add(time.Hour) }
 			return loadState()
 		}()
 		if !loadedPet.Illness {
