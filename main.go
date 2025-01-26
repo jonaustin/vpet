@@ -36,7 +36,7 @@ const (
 
 	feedHungerIncrease    = 30
 	feedHappinessIncrease = 10
-	playHappinessIncrease = 30
+	playHappinessIncrease =30
 	playEnergyDecrease    = 20
 	playHungerDecrease    = 10
 )
@@ -63,7 +63,7 @@ type model struct {
 	pet      Pet
 	choice   int
 	quitting bool
-}
+
 
 // UI styles
 type styles struct {
@@ -119,7 +119,7 @@ func (m *model) toggleSleep() {
 func (m *model) updateHourlyStats(t time.Time) {
 	m.modifyStats(func(p *Pet) {
 		// Hunger decreases every hour (reduced rate while sleeping)
-		if int(t.Minute())%60 == 0 {
+		if int(t.Minute() )%60 == 0 {
 			hungerRate := 5
 			if p.Sleeping {
 				hungerRate = 3 // 70% of 5 rounded down
@@ -151,7 +151,7 @@ func (m *model) updateHourlyStats(t time.Time) {
 	})
 }
 
-var (
+va
 	timeNow     = time.Now     // Allow mocking time.Now for tests
 	randFloat64 = rand.Float64 // Expose random function for testing
 
@@ -256,7 +256,7 @@ func loadState() Pet {
 	}
 
 	// Update stats based on elapsed time and check for death
-	now := timeNow()
+ow := timeNow()
 	elapsed := now.Sub(pet.LastSaved)
 	hoursElapsed := int(elapsed.Hours())
 	totalMinutes := int(elapsed.Minutes())
@@ -281,7 +281,7 @@ func loadState() Pet {
 	if !pet.Sleeping {
 		// Energy decreases when awake
 		energyLoss := (totalMinutes / 120) * energyDecreaseRate
-		pet.Energy = max(pet.Energy-energyLoss, minStat)
+		pet.Ener = max(pet.Energy-energyLoss, minStat)
 	} else {
 		// Energy recovers while sleeping
 		energyGain := (totalMinutes / 60) * energyRecoveryRate
@@ -298,8 +298,8 @@ func loadState() Pet {
 	}
 
 	// Calculate health degradation
-	healthLoss := hoursElapsed * healthDecreaseRate
-	if pet.Health > 0 {
+	healthLos    s := hoursElapsed * healthDecreaseRate
+	if pet.Hea    lth > 0 {
 		pet.Health = max(pet.Health-healthLoss, 0)
 	}
 
@@ -315,7 +315,7 @@ func loadState() Pet {
 		pet.Happiness < 10 || pet.Energy < 10
 
 	// Track time in critical state
-	if inCriticalState {
+if inCriticalState {
 		if pet.CriticalStartTime == nil {
 			pet.CriticalStartTime = &now
 		}
