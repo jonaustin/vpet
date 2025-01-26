@@ -380,18 +380,17 @@ func saveState(p *Pet) {
 			p.Logs = []LogEntry{}
 		}
 		
+		now := timeNow()
 		// Add new log entry
 		newLog := LogEntry{
-			Time:      timeNow(),
+			Time:      now,
 			OldStatus: p.LastStatus,
 			NewStatus: currentStatus,
 		}
 		p.Logs = append(p.Logs, newLog)
+		p.LastStatus = currentStatus
+		p.LastSaved = now
 	}
-	// Always update LastStatus after checking for changes
-	p.LastStatus = currentStatus
-
-	p.LastSaved = timeNow()
 	data, err := json.MarshalIndent(p, "", "  ")
 	if err != nil {
 		fmt.Printf("Error saving state: %v\n", err)
