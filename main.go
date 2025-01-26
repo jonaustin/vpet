@@ -13,6 +13,13 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
+// LogEntry represents a status change event
+type LogEntry struct {
+    Time      time.Time `json:"time"`
+    OldStatus string    `json:"old_status"`
+    NewStatus string    `json:"new_status"`
+}
+
 // Game constants
 const (
 	defaultPetName     = "Charm Pet"
@@ -55,6 +62,8 @@ type Pet struct {
 	LastSaved         time.Time  `json:"last_saved"`
 	CriticalStartTime *time.Time `json:"critical_start_time,omitempty"`
 	Illness           bool       `json:"illness"` // Random sickness flag
+	LastStatus        string     `json:"last_status,omitempty"`
+	Logs             []LogEntry `json:"logs,omitempty"`
 }
 
 // model represents the game state
@@ -74,7 +83,7 @@ type styles struct {
 // Helper function to modify stats and save immediately
 func (m *model) modifyStats(f func(*Pet)) {
 	f(&m.pet)
-	saveState(m.pet)
+	saveState(&m.pet)
 }
 
 // Pet state modification functions
@@ -196,7 +205,7 @@ func newPet(testCfg *TestConfig) Pet {
 			Illness:   testCfg.Illness,
 		}
 	}
-	return Pet{
+	pet := Pet{
 		Name:      defaultPetName,
 		Hunger:    maxStat,
 		Happiness: maxStat,
@@ -208,6 +217,10 @@ func newPet(testCfg *TestConfig) Pet {
 		LastSaved: timeNow(),
 		Illness:   false,
 	}
+	if testCfg == nil {
+		pet.LastStatus = getStatus(pet)
+	}
+	return pet
 }
 
 // loadState loads the pet's state from file or creates a new pet
@@ -344,7 +357,18 @@ if inCriticalState {
 	return pet
 }
 
-func saveState(p Pet) {
+func saveState(p *Pet) {
+	// Add status change tracking
+	currentStatus := getStatus(*p)
+	if currentStatus != p.LastStatus {
+		p.Logs = append(p.Logs, LogEntry{
+			Time:      timeNow(),
+			OldStatus: p.LastStatus,
+			NewStatus: currentStatus,
+		})
+		p.LastStatus = currentStatus
+	}
+
 	p.LastSaved = timeNow()
 	data, err := json.MarshalIndent(p, "", "  ")
 	if err != nil {
@@ -535,7 +559,7 @@ func main() {
 
 	if *updateOnly {
 		pet := loadState() // This already updates based on elapsed time
-		saveState(pet)     // Save the updated stats
+		saveState(&pet)    // Save the updated stats
 		return
 	}
 
