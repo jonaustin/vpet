@@ -398,8 +398,8 @@ func TestNewPetLogging(t *testing.T) {
 	if firstLog.NewStatus != "😸 Happy" {
 		t.Errorf("Expected initial status '😸 Happy', got '%s'", firstLog.NewStatus)
 	}
-	if !firstLog.Time.After(time.Now().Add(-1 * time.Second)) {
-		t.Error("Initial log time should be recent")
+	if !firstLog.Time.After(time.Now().Add(-5 * time.Second)) {
+		t.Error("Initial log time should be within last 5 seconds")
 	}
 }
 

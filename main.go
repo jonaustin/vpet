@@ -368,11 +368,17 @@ func saveState(p *Pet) {
 	// Add status change tracking
 	currentStatus := getStatus(*p)
 	if currentStatus != p.LastStatus {
-		p.Logs = append(p.Logs, LogEntry{
+		// Preserve existing logs and append new entry
+		newLog := LogEntry{
 			Time:      timeNow(),
 			OldStatus: p.LastStatus,
 			NewStatus: currentStatus,
-		})
+		}
+		if p.Logs == nil {
+			p.Logs = []LogEntry{newLog}
+		} else {
+			p.Logs = append(p.Logs, newLog)
+		}
 		p.LastStatus = currentStatus
 	}
 
