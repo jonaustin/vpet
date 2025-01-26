@@ -62,7 +62,7 @@ type model struct {
 	pet      Pet
 	choice   int
 	quitting bool
-
+}
 
 // UI styles
 type styles struct {
@@ -297,8 +297,8 @@ ow := timeNow()
 	}
 
 	// Calculate health degradation
-	healthLos    s := hoursElapsed * healthDecreaseRate
-	if pet.Hea    lth > 0 {
+	healthLoss := hoursElapsed * healthDecreaseRate
+	if pet.Health > 0 {
 		pet.Health = max(pet.Health-healthLoss, 0)
 	}
 
