@@ -441,19 +441,46 @@ func (m model) View() string {
 	s := gameStyles.title.Render("😺 " + m.pet.Name + " 😺\n\n")
 
 	// Status display
-	stats := []struct {
-		name  string
-		value int
-	}{
-		{"Hunger", m.pet.Hunger},
-		{"Happiness", m.pet.Happiness},
-		{"Energy", m.pet.Energy},
+	lifeStage := "Baby"
+	switch m.pet.LifeStage {
+	case 1:
+		lifeStage = "Child"
+	case 2:
+		lifeStage = "Adult"
 	}
 
-	for _, stat := range stats {
-		s += gameStyles.status.Render(fmt.Sprintf("%-10s %d%%\n", stat.name+":", stat.value))
+	stats := []struct {
+		name  string
+		value string
+	}{
+		{"Hunger", fmt.Sprintf("%d%%", m.pet.Hunger)},
+		{"Happiness", fmt.Sprintf("%d%%", m.pet.Happiness)},
+		{"Energy", fmt.Sprintf("%d%%", m.pet.Energy)},
+		{"Health", fmt.Sprintf("%d%%", m.pet.Health)},
+		{"Age", fmt.Sprintf("%dh", m.pet.Age)},
+		{"Illness", func() string {
+			if m.pet.Illness {
+				return "Yes"
+			}
+			return "No"
+		}()},
+		{"Life Stage", lifeStage},
 	}
-	s += gameStyles.status.Render(fmt.Sprintf("%-10s %s\n\n", "Status:", getStatus(m.pet)))
+
+	// Two column layout
+	for i := 0; i < len(stats); i += 2 {
+		left := stats[i]
+		right := ""
+		if i+1 < len(stats) {
+			right = fmt.Sprintf("%-10s %s", stats[i+1].name+":", stats[i+1].value)
+		}
+		s += gameStyles.status.Render(
+			fmt.Sprintf("%-15s %-15s\n",
+				fmt.Sprintf("%-10s %s", left.name+":", left.value),
+				right,
+			))
+	}
+	s += gameStyles.status.Render(fmt.Sprintf("\n%-10s %s\n\n", "Status:", getStatus(m.pet)))
 
 	// Menu display
 	choices := []string{"Feed", "Play", "Sleep", "Medicine", "Discipline", "Quit"}
