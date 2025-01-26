@@ -256,7 +256,7 @@ func TestIllnessSystem(t *testing.T) {
 
 	t.Run("Develop illness", func(t *testing.T) {
 		// Create deterministic random source for test
-		r := rand.New(rand.NewSource(1))
+		r := rand.New(rand.NewSource(789))  // This seed produces a value < 0.1
 		randFloat64 = r.Float64 // Override random for test
 		
 		// Create pet with low health
