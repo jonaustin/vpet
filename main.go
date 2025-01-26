@@ -304,7 +304,7 @@ func loadState() Pet {
 
 	// Check for random illness when health is low
 	if pet.Health < 50 && !pet.Illness {
-		if randFloat64() < illnessChance * float64(hoursElapsed) {
+		if randFloat64() < illnessChance {
 			pet.Illness = true
 		}
 	}
