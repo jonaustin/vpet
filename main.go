@@ -255,7 +255,7 @@ func loadState() Pet {
 	}
 
 	// Update stats based on elapsed time and check for death
-ow := timeNow()
+	now := timeNow()
 	elapsed := now.Sub(pet.LastSaved)
 	hoursElapsed := int(elapsed.Hours())
 	totalMinutes := int(elapsed.Minutes())
