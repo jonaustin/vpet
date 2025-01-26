@@ -296,17 +296,17 @@ func loadState() Pet {
 		pet.Happiness = max(pet.Happiness-happinessLoss, minStat)
 	}
 
-	// Calculate health degradation
-	healthLoss := hoursElapsed * healthDecreaseRate
-	if pet.Health > 0 {
-		pet.Health = max(pet.Health-healthLoss, 0)
-	}
-
 	// Check for random illness when health is low
 	if pet.Health < 50 && !pet.Illness {
 		if randFloat64() < illnessChance {
 			pet.Illness = true
 		}
+	}
+
+	// Calculate health degradation
+	healthLoss := hoursElapsed * healthDecreaseRate
+	if pet.Health > 0 {
+		pet.Health = max(pet.Health-healthLoss, 0)
 	}
 
 	// Check if any critical stat is below threshold
