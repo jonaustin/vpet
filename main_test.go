@@ -350,3 +350,124 @@ func TestGetStatus(t *testing.T) {
 		}
 	})
 }
+
+func TestNewPetLogging(t *testing.T) {
+	cleanup := setupTestFile(t)
+	defer cleanup()
+	
+	pet := newPet(nil)
+	
+	if len(pet.Logs) != 1 {
+		t.Fatalf("New pet should have initial log entry, got %d entries", len(pet.Logs))
+	}
+	
+	firstLog := pet.Logs[0]
+	if firstLog.NewStatus != "😸 Happy" {
+		t.Errorf("Expected initial status '😸 Happy', got '%s'", firstLog.NewStatus)
+	}
+	if !firstLog.Time.After(time.Now().Add(-1 * time.Second)) {
+		t.Error("Initial log time should be recent")
+	}
+}
+
+func TestStatusLogging(t *testing.T) {
+	cleanup := setupTestFile(t)
+	defer cleanup()
+
+	t.Run("Single status change", func(t *testing.T) {
+		pet := newPet(nil)
+		pet.Hunger = 20 // Should trigger hungry status
+		saveState(&pet)
+
+		if len(pet.Logs) != 2 {
+			t.Fatalf("Expected 2 log entries, got %d", len(pet.Logs))
+		}
+
+		changeLog := pet.Logs[1]
+		if changeLog.OldStatus != "😸 Happy" {
+			t.Errorf("Expected OldStatus '😸 Happy', got '%s'", changeLog.OldStatus)
+		}
+		if changeLog.NewStatus != "🙀 Hungry" {
+			t.Errorf("Expected NewStatus '🙀 Hungry', got '%s'", changeLog.NewStatus)
+		}
+	})
+
+	t.Run("Multiple status changes", func(t *testing.T) {
+		pet := newPet(nil)
+		
+		// First change to Hungry
+		pet.Hunger = 20
+		saveState(&pet)
+		
+		// Second change to Tired
+		pet.Energy = 20
+		saveState(&pet)
+
+		if len(pet.Logs) != 3 {
+			t.Fatalf("Expected 3 log entries, got %d", len(pet.Logs))
+		}
+
+		firstChange := pet.Logs[1]
+		if firstChange.NewStatus != "🙀 Hungry" {
+			t.Errorf("First change should be Hungry, got '%s'", firstChange.NewStatus)
+		}
+
+		secondChange := pet.Logs[2]
+		if secondChange.NewStatus != "😾 Tired" {
+			t.Errorf("Second change should be Tired, got '%s'", secondChange.NewStatus)
+		}
+		if secondChange.OldStatus != "🙀 Hungry" {
+			t.Errorf("Second change OldStatus should be Hungry, got '%s'", secondChange.OldStatus)
+		}
+	})
+
+	t.Run("No status change", func(t *testing.T) {
+		pet := newPet(nil)
+		initialLogCount := len(pet.Logs)
+		
+		// No actual status change
+		pet.Happiness = 95
+		saveState(&pet)
+
+		if len(pet.Logs) != initialLogCount {
+			t.Error("Should not create new log entry when status doesn't change")
+		}
+	})
+
+	t.Run("Loading existing state with logs", func(t *testing.T) {
+		// Create pet with existing logs
+		pet := newPet(nil)
+		pet.Hunger = 20
+		saveState(&pet)
+		initialLogCount := len(pet.Logs)
+
+		// Load state and make new change
+		loadedPet := loadState()
+		loadedPet.Energy = 20
+		saveState(&loadedPet)
+
+		if len(loadedPet.Logs) != initialLogCount+1 {
+			t.Errorf("Should append new log entries, expected %d got %d", 
+				initialLogCount+1, len(loadedPet.Logs))
+		}
+	})
+}
+
+func TestDeathLogging(t *testing.T) {
+	cleanup := setupTestFile(t)
+	defer cleanup()
+
+	pet := newPet(nil)
+	pet.Dead = true
+	pet.CauseOfDeath = "Old Age"
+	saveState(&pet)
+
+	if len(pet.Logs) < 1 {
+		t.Fatal("Should have death log entry")
+	}
+
+	lastLog := pet.Logs[len(pet.Logs)-1]
+	if lastLog.NewStatus != "💀 Dead" {
+		t.Errorf("Last log entry should be death status, got '%s'", lastLog.NewStatus)
+	}
+}
