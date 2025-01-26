@@ -2,7 +2,6 @@ package main
 
 import (
 	"encoding/json"
-	"math/rand"
 	"os"
 	"path/filepath"
 	"testing"
@@ -37,7 +36,7 @@ func TestDeathConditions(t *testing.T) {
 		InitialHunger:    lowStatThreshold - 1,
 		InitialHappiness: lowStatThreshold - 1,
 		InitialEnergy:    lowStatThreshold - 1,
-		Health:           20,  // Force critical health
+		Health:           20, // Force critical health
 		LastSavedTime:    criticalStart,
 	}
 	pet := newPet(testCfg)
@@ -64,7 +63,7 @@ func TestNewPet(t *testing.T) {
 	if pet.Name != defaultPetName {
 		t.Errorf("Expected pet name to be %s, got %s", defaultPetName, pet.Name)
 	}
-	
+
 	// Check new fields
 	if pet.Health != maxStat {
 		t.Errorf("Expected initial health to be %d, got %d", maxStat, pet.Health)
@@ -78,7 +77,7 @@ func TestNewPet(t *testing.T) {
 	if pet.Illness {
 		t.Error("New pet should not be ill")
 	}
-	
+
 	if pet.Health != maxStat {
 		t.Errorf("Expected initial health to be %d, got %d", maxStat, pet.Health)
 	}
@@ -120,7 +119,7 @@ func TestPetStatUpdates(t *testing.T) {
 		Health:           80,  // Start with suboptimal health
 		IsSleeping:       false,
 		LastSavedTime:    time.Now(),
-		Illness:         true, // Start with illness
+		Illness:          true, // Start with illness
 	}
 	m := initialModel(testCfg)
 
@@ -257,7 +256,7 @@ func TestIllnessSystem(t *testing.T) {
 	t.Run("Develop illness", func(t *testing.T) {
 		// Force deterministic illness check
 		randFloat64 = func() float64 { return 0.05 } // Always < 0.1 illness threshold
-		
+
 		// Create pet with low health
 		// Use fixed timestamps to ensure exact 1 hour difference
 		baseTime := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
@@ -282,8 +281,8 @@ func TestIllnessSystem(t *testing.T) {
 	t.Run("Cure with medicine", func(t *testing.T) {
 		// Create sick pet
 		testCfg := &TestConfig{
-			Health:    40,
-			Illness:   true,
+			Health:  40,
+			Illness: true,
 		}
 		m := initialModel(testCfg)
 		m.administerMedicine()
@@ -299,8 +298,8 @@ func TestIllnessSystem(t *testing.T) {
 	t.Run("Prevent illness", func(t *testing.T) {
 		// Create healthy pet
 		testCfg := &TestConfig{
-			Health:    60,
-			Illness:   false,
+			Health:        60,
+			Illness:       false,
 			LastSavedTime: time.Now().Add(-1 * time.Hour),
 		}
 		pet := newPet(testCfg)
@@ -316,7 +315,7 @@ func TestIllnessSystem(t *testing.T) {
 func TestGetStatus(t *testing.T) {
 	cleanup := setupTestFile(t)
 	defer cleanup()
-	
+
 	t.Run("Dead status", func(t *testing.T) {
 		pet := newPet(nil)
 		pet.Dead = true
