@@ -255,9 +255,8 @@ func TestIllnessSystem(t *testing.T) {
 	defer cleanup()
 
 	t.Run("Develop illness", func(t *testing.T) {
-		// Create deterministic random source for test
-		r := rand.New(rand.NewSource(789))  // This seed produces a value < 0.1
-		randFloat64 = r.Float64 // Override random for test
+		// Force deterministic illness check
+		randFloat64 = func() float64 { return 0.05 } // Always < 0.1 illness threshold
 		
 		// Create pet with low health
 		// Use fixed timestamps to ensure exact 1 hour difference
