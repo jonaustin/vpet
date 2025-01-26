@@ -152,7 +152,7 @@ func (m *model) updateHourlyStats(t time.Time) {
 }
 
 var (
-	timeNow = time.Now // Allow mocking time.Now for tests
+	timeNow     = time.Now     // Allow mocking time.Now for tests
 	randFloat64 = rand.Float64 // Expose random function for testing
 
 	gameStyles = styles{
