@@ -41,7 +41,7 @@ func TestDeathConditions(t *testing.T) {
 	}
 	pet := newPet(testCfg)
 	pet.CriticalStartTime = &criticalStart
-	saveState(pet)
+	saveState(&pet)
 
 	// Fix LastSaved time in file
 	data, err := os.ReadFile(testConfigPath)
@@ -225,7 +225,7 @@ func TestTimeBasedUpdates(t *testing.T) {
 
 	// Save initial state
 	pet := newPet(testCfg)
-	saveState(pet)
+	saveState(&pet)
 
 	// Fix the LastSaved time in the saved file
 	data, err := os.ReadFile(testConfigPath)
@@ -282,7 +282,7 @@ func TestIllnessSystem(t *testing.T) {
 			LastSavedTime: baseTime,
 		}
 		pet := newPet(testCfg)
-		saveState(pet)
+		saveState(&pet)
 
 		// Load with exact 1 hour later time
 		loadedPet := func() Pet {
@@ -319,7 +319,7 @@ func TestIllnessSystem(t *testing.T) {
 			LastSavedTime: time.Now().Add(-1 * time.Hour),
 		}
 		pet := newPet(testCfg)
-		saveState(pet)
+		saveState(&pet)
 
 		loadedPet := loadState()
 		if loadedPet.Illness {
