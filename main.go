@@ -456,16 +456,16 @@ func (m model) View() string {
 	s += gameStyles.status.Render(fmt.Sprintf("%-10s %s\n\n", "Status:", getStatus(m.pet)))
 
 	// Menu display
-	choices := []string{"Feed", "Play", "Sleep", "Quit"}
+	choices := []string{"Feed", "Play", "Sleep", "Medicine", "Discipline", "Quit"}
 	for i, choice := range choices {
 		cursor := " "
 		if m.choice == i {
 			cursor = ">"
 		}
-		s += gameStyles.menu.Render(fmt.Sprintf("      %s %s\n", cursor, choice))
+		s += gameStyles.menu.Render(fmt.Sprintf("  %s %s\n", cursor, choice))
 	}
 
-	s += "\n" + gameStyles.status.Render("Use ↑/↓ to select, enter to confirm")
+	s += "\n" + gameStyles.status.Render("Use arrows to move • enter to select • q to quit")
 	return s
 }
 
