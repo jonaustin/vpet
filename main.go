@@ -153,6 +153,7 @@ func (m *model) updateHourlyStats(t time.Time) {
 
 var (
 	timeNow = time.Now // Allow mocking time.Now for tests
+	randFloat64 = rand.Float64 // Expose random function for testing
 
 	gameStyles = styles{
 		title: lipgloss.NewStyle().
@@ -305,7 +306,7 @@ func loadState() Pet {
 	// Check for random illness when health is low
 	if pet.Health < 50 && !pet.Illness {
 		// Ensure at least 10% chance per test hour while keeping cumulative probability
-		if rand.Float64() < 1.0-math.Pow(1.0-illnessChance, float64(hoursElapsed)) {
+		if randFloat64() < 1.0-math.Pow(1.0-illnessChance, float64(hoursElapsed)) {
 			pet.Illness = true
 		}
 	}
