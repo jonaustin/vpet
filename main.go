@@ -206,7 +206,7 @@ func newPet(testCfg *TestConfig) Pet {
 		}
 	}
 	now := timeNow() // Already UTC
-	pet = Pet{
+	pet := Pet{
 		Name:      defaultPetName,
 		Hunger:    maxStat,
 		Happiness: maxStat,
