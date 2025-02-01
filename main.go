@@ -548,11 +548,11 @@ func getStatus(p Pet) string {
 	if p.Sleeping {
 		return "😴 Sleeping"
 	}
-	if p.Hunger < 30 {
-		return "🙀 Hungry"
-	}
 	if p.Energy < 30 {
 		return "😾 Tired"
+	}
+	if p.Hunger < 30 {
+		return "🙀 Hungry"
 	}
 	if p.Happiness < 30 {
 		return "😿 Sad"
