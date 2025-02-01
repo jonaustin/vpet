@@ -206,7 +206,6 @@ func newPet(testCfg *TestConfig) Pet {
 		}
 	}
 	now := timeNow() // Already UTC
-	now := timeNow()
 	pet := Pet{
 		Name:      defaultPetName,
 		Hunger:    maxStat,
@@ -378,7 +377,7 @@ func saveState(p *Pet) {
 	if p.LastStatus == "" {
 		p.LastStatus = currentStatus
 	}
-	
+
 	if currentStatus != p.LastStatus {
 		// Initialize logs array if needed
 		if p.Logs == nil {
