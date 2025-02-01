@@ -221,7 +221,7 @@ func newPet(testCfg *TestConfig) Pet {
 	pet.LastStatus = getStatus(pet)
 	// Add initial log entry
 	pet.Logs = []LogEntry{{
-		Time:      now,
+		Time:      timeNow(), // Use fresh timestamp for log entry
 		OldStatus: "",
 		NewStatus: pet.LastStatus,
 	}}
