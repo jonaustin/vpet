@@ -160,7 +160,7 @@ func (m *model) updateHourlyStats(t time.Time) {
 }
 
 var (
-	timeNow     = time.Now     // Allow mocking time.Now for tests
+	timeNow     = func() time.Time { return time.Now().UTC() } // Always use UTC time
 	randFloat64 = rand.Float64 // Expose random function for testing
 
 	gameStyles = styles{
@@ -205,7 +205,7 @@ func newPet(testCfg *TestConfig) Pet {
 			Illness:   testCfg.Illness,
 		}
 	}
-	now := timeNow()
+	now := timeNow() // Already UTC
 	pet := Pet{
 		Name:      defaultPetName,
 		Hunger:    maxStat,
@@ -274,7 +274,7 @@ func loadState() Pet {
 
 	// Update stats based on elapsed time and check for death
 	now := timeNow()
-	elapsed := now.Sub(pet.LastSaved)
+	elapsed := now.Sub(pet.LastSaved.UTC()) // Ensure UTC comparison
 	hoursElapsed := int(elapsed.Hours())
 	totalMinutes := int(elapsed.Minutes())
 

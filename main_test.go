@@ -30,7 +30,7 @@ func TestDeathConditions(t *testing.T) {
 	defer cleanup()
 
 	// Create pet that has been critical for 5 hours (new 4h threshold)
-	currentTime := time.Now()
+	currentTime := time.Now().UTC()
 	criticalStart := currentTime.Add(-5 * time.Hour)
 	testCfg := &TestConfig{
 		InitialHunger:    lowStatThreshold - 1,
@@ -210,7 +210,7 @@ func TestTimeBasedUpdates(t *testing.T) {
 	defer func() { timeNow = originalTimeNow }()
 
 	// Set current time
-	currentTime := time.Now()
+	currentTime := time.Now().UTC()
 	timeNow = func() time.Time { return currentTime }
 
 	// Create initial pet state from 2 hours ago
@@ -275,7 +275,7 @@ func TestIllnessSystem(t *testing.T) {
 
 		// Create pet with low health
 		// Use fixed timestamps to ensure exact 1 hour difference
-		baseTime := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
+		baseTime := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC).UTC()
 		testCfg := &TestConfig{
 			Health:        40,
 			Illness:       false,
