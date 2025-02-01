@@ -15,9 +15,9 @@ import (
 
 // LogEntry represents a status change event
 type LogEntry struct {
-    Time      time.Time `json:"time"`
-    OldStatus string    `json:"old_status"`
-    NewStatus string    `json:"new_status"`
+	Time      time.Time `json:"time"`
+	OldStatus string    `json:"old_status"`
+	NewStatus string    `json:"new_status"`
 }
 
 // Game constants
@@ -42,7 +42,7 @@ const (
 
 	feedHungerIncrease    = 30
 	feedHappinessIncrease = 10
-	playHappinessIncrease =30
+	playHappinessIncrease = 30
 	playEnergyDecrease    = 20
 	playHungerDecrease    = 10
 )
@@ -63,7 +63,7 @@ type Pet struct {
 	CriticalStartTime *time.Time `json:"critical_start_time,omitempty"`
 	Illness           bool       `json:"illness"` // Random sickness flag
 	LastStatus        string     `json:"last_status,omitempty"`
-	Logs             []LogEntry `json:"logs,omitempty"`
+	Logs              []LogEntry `json:"logs,omitempty"`
 }
 
 // model represents the game state
@@ -161,7 +161,7 @@ func (m *model) updateHourlyStats(t time.Time) {
 
 var (
 	timeNow     = func() time.Time { return time.Now().UTC() } // Always use UTC time
-	randFloat64 = rand.Float64 // Expose random function for testing
+	randFloat64 = rand.Float64                                 // Expose random function for testing
 
 	gameStyles = styles{
 		title: lipgloss.NewStyle().
@@ -341,7 +341,7 @@ func loadState() Pet {
 		pet.Happiness < 10 || pet.Energy < 10
 
 	// Track time in critical state
-if inCriticalState {
+	if inCriticalState {
 		if pet.CriticalStartTime == nil {
 			pet.CriticalStartTime = &now
 		}
@@ -374,12 +374,13 @@ if inCriticalState {
 func saveState(p *Pet) {
 	// Add status change tracking
 	currentStatus := getStatus(*p)
+	fmt.Printf("Current Status: %s, Last Status: %s\n", currentStatus, p.LastStatus)
 	if currentStatus != p.LastStatus {
 		// Initialize logs array if needed
 		if p.Logs == nil {
 			p.Logs = []LogEntry{}
 		}
-		
+
 		now := timeNow()
 		// Add new log entry
 		newLog := LogEntry{
