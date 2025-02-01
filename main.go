@@ -206,6 +206,7 @@ func newPet(testCfg *TestConfig) Pet {
 		}
 	}
 	now := timeNow() // Already UTC
+	now := timeNow()
 	pet := Pet{
 		Name:      defaultPetName,
 		Hunger:    maxStat,
@@ -215,7 +216,7 @@ func newPet(testCfg *TestConfig) Pet {
 		Age:       0,
 		LifeStage: 0,
 		Sleeping:  false,
-		LastSaved: timeNow(), // Use timeNow consistently
+		LastSaved: now,
 		Illness:   false,
 	}
 	pet.LastStatus = getStatus(pet)
@@ -552,11 +553,11 @@ func getStatus(p Pet) string {
 	if p.Sleeping {
 		return "😴 Sleeping"
 	}
-	if p.Energy < 30 {
-		return "😾 Tired"
-	}
 	if p.Hunger < 30 {
 		return "🙀 Hungry"
+	}
+	if p.Energy < 30 {
+		return "😾 Tired"
 	}
 	if p.Happiness < 30 {
 		return "😿 Sad"
