@@ -218,10 +218,11 @@ func newPet(testCfg *TestConfig) Pet {
 		LastSaved: now,
 		Illness:   false,
 	}
+	now := timeNow() // Use same timestamp for consistency
 	pet.LastStatus = getStatus(pet)
 	// Add initial log entry
 	pet.Logs = []LogEntry{{
-		Time:      timeNow(), // Use fresh timestamp for log entry
+		Time:      now,
 		OldStatus: "",
 		NewStatus: pet.LastStatus,
 	}}
