@@ -215,7 +215,7 @@ func newPet(testCfg *TestConfig) Pet {
 		Age:       0,
 		LifeStage: 0,
 		Sleeping:  false,
-		LastSaved: now,
+		LastSaved: timeNow(), // Use timeNow consistently
 		Illness:   false,
 	}
 	pet.LastStatus = getStatus(pet)
@@ -374,7 +374,10 @@ func loadState() Pet {
 func saveState(p *Pet) {
 	// Add status change tracking
 	currentStatus := getStatus(*p)
-	fmt.Printf("Current Status: %s, Last Status: %s\n", currentStatus, p.LastStatus)
+	if p.LastStatus == "" {
+		p.LastStatus = currentStatus
+	}
+	
 	if currentStatus != p.LastStatus {
 		// Initialize logs array if needed
 		if p.Logs == nil {
