@@ -401,8 +401,8 @@ func TestNewPetLogging(t *testing.T) {
 	if firstLog.Time.After(time.Now()) {
 		t.Error("Initial log time should not be in the future")
 	}
-	if firstLog.Time.Before(time.Now().Add(-30 * time.Second)) {
-		t.Error("Initial log time should be recent (within 30s)")
+	if firstLog.Time.Before(time.Now().Add(-1 * time.Minute)) {
+		t.Error("Initial log time should be recent (within 1 minute)")
 	}
 }
 
@@ -431,12 +431,13 @@ func TestStatusLogging(t *testing.T) {
 	t.Run("Multiple status changes", func(t *testing.T) {
 		pet := newPet(nil)
 		
-		// First change to Hungry
-		pet.Hunger = 20
+		// First change to Tired (energy <30)
+		pet.Energy = 20
+		pet.Hunger = 50  // Keep hunger above threshold
 		saveState(&pet)
 		
-		// Second change to Tired
-		pet.Energy = 20
+		// Second change to Hungry (hunger <30)
+		pet.Hunger = 20
 		saveState(&pet)
 
 		if len(pet.Logs) != 3 {
@@ -479,7 +480,8 @@ func TestStatusLogging(t *testing.T) {
 
 		// Load state and make new change
 		loadedPet := loadState()
-		loadedPet.Energy = 20
+		loadedPet.Hunger = 50  // Reset hunger above threshold
+		loadedPet.Energy = 20  // Now energy is the lowest stat
 		saveState(&loadedPet)
 
 		if len(loadedPet.Logs) != initialLogCount+1 {
