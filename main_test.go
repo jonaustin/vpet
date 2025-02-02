@@ -407,6 +407,49 @@ func TestStatusLogging(t *testing.T) {
 	cleanup := setupTestFile(t)
 	defer cleanup()
 
+	t.Run("Multiple status changes", func(t *testing.T) {
+		pet := newPet(nil)
+		initialStatus := pet.LastStatus
+
+		// First change: Make pet hungry
+		pet.Hunger = 20
+		saveState(&pet)
+
+		// Second change: Make pet tired
+		pet.Energy = 20
+		saveState(&pet)
+
+		// Third change: Make pet sleep
+		pet.Sleeping = true
+		saveState(&pet)
+
+		if len(pet.Logs) != 4 { // Initial + 3 changes
+			t.Fatalf("Expected 4 log entries, got %d", len(pet.Logs))
+		}
+
+		// Verify the sequence of status changes
+		expectedStatuses := []struct {
+			old string
+			new string
+		}{
+			{"", initialStatus},           // Initial status
+			{initialStatus, "🙀 Hungry"},  // First change
+			{"🙀 Hungry", "😾 Tired"},     // Second change
+			{"😾 Tired", "😴 Sleeping"},   // Third change
+		}
+
+		for i, expected := range expectedStatuses {
+			if pet.Logs[i].OldStatus != expected.old {
+				t.Errorf("Log %d: Expected old status '%s', got '%s'", 
+					i, expected.old, pet.Logs[i].OldStatus)
+			}
+			if pet.Logs[i].NewStatus != expected.new {
+				t.Errorf("Log %d: Expected new status '%s', got '%s'", 
+					i, expected.new, pet.Logs[i].NewStatus)
+			}
+		}
+	})
+
 	t.Run("Single status change", func(t *testing.T) {
 		pet := newPet(nil)
 		pet.Hunger = 20 // Should trigger hungry status
