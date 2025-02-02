@@ -1,29 +1,59 @@
 {
   "name": "Charm Pet",
-  "hunger": 90,
+  "hunger": 75,
   "happiness": 100,
-  "energy": 30,
+  "energy": 60,
   "health": 100,
-  "age": 0,
-  "stage": 0,
+  "age": 89,
+  "stage": 2,
   "sleeping": true,
   "dead": false,
-  "last_saved": "2025-02-01T23:19:40.435715641Z",
+  "last_saved": "2025-02-02T23:54:47.473173321Z",
   "illness": false,
   "last_status": "😴 Sleeping",
   "logs": [
     {
-      "time": "2025-01-26T20:04:21.153365926Z",
+      "time": "2025-01-31T00:22:36.595991576Z",
       "old_status": "",
+      "new_status": "😸 Happy"
+    },
+    {
+      "time": "2025-02-01T00:23:04.35863801Z",
+      "old_status": "😸 Happy",
+      "new_status": "😾 Tired"
+    },
+    {
+      "time": "2025-02-01T00:23:11.048248464Z",
+      "old_status": "😾 Tired",
       "new_status": "😴 Sleeping"
     },
     {
-      "time": "2025-02-01T20:57:45.034788583Z",
+      "time": "2025-02-02T00:24:04.672673866Z",
+      "old_status": "😴 Sleeping",
+      "new_status": "🙀 Hungry"
+    },
+    {
+      "time": "2025-02-02T00:24:13.253016328Z",
+      "old_status": "🙀 Hungry",
+      "new_status": "😿 Sad"
+    },
+    {
+      "time": "2025-02-02T00:24:14.767996265Z",
+      "old_status": "😿 Sad",
+      "new_status": "😸 Happy"
+    },
+    {
+      "time": "2025-02-02T00:24:25.859368853Z",
+      "old_status": "😸 Happy",
+      "new_status": "😴 Sleeping"
+    },
+    {
+      "time": "2025-02-02T23:53:41.46578665Z",
       "old_status": "😴 Sleeping",
       "new_status": "😸 Happy"
     },
     {
-      "time": "2025-02-01T23:09:57.284866726Z",
+      "time": "2025-02-02T23:53:54.305036508Z",
       "old_status": "😸 Happy",
       "new_status": "😴 Sleeping"
     }

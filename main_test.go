@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -432,19 +433,19 @@ func TestStatusLogging(t *testing.T) {
 			old string
 			new string
 		}{
-			{"", initialStatus},           // Initial status
-			{initialStatus, "🙀 Hungry"},  // First change
+			{"", initialStatus},         // Initial status
+			{initialStatus, "🙀 Hungry"},  //First change
 			{"🙀 Hungry", "😾 Tired"},     // Second change
 			{"😾 Tired", "😴 Sleeping"},   // Third change
 		}
 
 		for i, expected := range expectedStatuses {
 			if pet.Logs[i].OldStatus != expected.old {
-				t.Errorf("Log %d: Expected old status '%s', got '%s'", 
+				t.Errorf("Log %d: Expected old status '%s', got '%s'",
 					i, expected.old, pet.Logs[i].OldStatus)
 			}
 			if pet.Logs[i].NewStatus != expected.new {
-				t.Errorf("Log %d: Expected new status '%s', got '%s'", 
+				t.Errorf("Log %d: Expected new status '%s', got '%s'",
 					i, expected.new, pet.Logs[i].NewStatus)
 			}
 		}

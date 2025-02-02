@@ -27,7 +27,7 @@ const (
 	minStat            = 0
 	lowStatThreshold   = 30
 	deathTimeThreshold = 4 * time.Hour // Shorter Tamagotchi-style timer
-	healthDecreaseRate = 5             // Health loss per hour in critical
+	healthDecreaseRate = 2             // Health loss per hour
 	ageStageThresholds = 24            // Hours per life stage
 	illnessChance      = 0.1           // 10% chance per hour when health <50
 	medicineEffect     = 30            // Health restored by medicine
@@ -218,7 +218,6 @@ func newPet(testCfg *TestConfig) Pet {
 		LastSaved: now,
 		Illness:   false,
 	}
-	now := timeNow() // Use same timestamp for consistency
 	pet.LastStatus = getStatus(pet)
 	// Add initial log entry
 	pet.Logs = []LogEntry{{
