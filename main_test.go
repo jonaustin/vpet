@@ -501,6 +501,69 @@ func TestStatusLogging(t *testing.T) {
 	})
 }
 
+func TestAging(t *testing.T) {
+	cleanup := setupTestFile(t)
+	defer cleanup()
+
+	t.Run("Age increases over time", func(t *testing.T) {
+		// Set current time
+		currentTime := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
+		timeNow = func() time.Time { return currentTime }
+
+		// Create pet 5 hours ago
+		fiveHoursAgo := currentTime.Add(-5 * time.Hour)
+		testCfg := &TestConfig{
+			LastSavedTime: fiveHoursAgo,
+		}
+		pet := newPet(testCfg)
+		saveState(&pet)
+
+		// Load state which will process elapsed time
+		loadedPet := loadState()
+
+		if loadedPet.Age != 5 {
+			t.Errorf("Expected age to be 5 hours, got %d", loadedPet.Age)
+		}
+	})
+
+	t.Run("Life stages transition correctly", func(t *testing.T) {
+		// Set current time
+		currentTime := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
+		timeNow = func() time.Time { return currentTime }
+
+		testCases := []struct {
+			hours     int
+			expected  int
+			stageName string
+		}{
+			{0, 0, "Baby"},
+			{23, 0, "Baby"},
+			{24, 1, "Child"},
+			{47, 1, "Child"},
+			{48, 2, "Adult"},
+			{100, 2, "Adult"}, // Should stay adult
+		}
+
+		for _, tc := range testCases {
+			t.Run(fmt.Sprintf("%d hours = %s", tc.hours, tc.stageName), func(t *testing.T) {
+				testTime := currentTime.Add(time.Duration(-tc.hours) * time.Hour)
+				testCfg := &TestConfig{
+					LastSavedTime: testTime,
+				}
+				pet := newPet(testCfg)
+				saveState(&pet)
+
+				loadedPet := loadState()
+
+				if loadedPet.LifeStage != tc.expected {
+					t.Errorf("At %d hours: Expected life stage %d (%s), got %d",
+						tc.hours, tc.expected, tc.stageName, loadedPet.LifeStage)
+				}
+			})
+		}
+	})
+}
+
 func TestDeathLogging(t *testing.T) {
 	cleanup := setupTestFile(t)
 	defer cleanup()
