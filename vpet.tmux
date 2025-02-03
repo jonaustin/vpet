@@ -8,7 +8,7 @@ ORIGINAL_STATUS=$(tmux show-option -gqv "status-left")
 # Function to update status
 update_status() {
     go run ~/exp/vpet/main.go -u
-    local pet_status=$("$CURRENT_DIR/scripts/pet_status.sh")
+    local pet_status=$(go run ~/exp/vpet/main.go -status)
     if [[ -z "$ORIGINAL_STATUS" ]]; then
         tmux set-option -g status-left "$pet_status"
     else

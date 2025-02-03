@@ -8,7 +8,7 @@
   "stage": 2,
   "sleeping": true,
   "dead": false,
-  "last_saved": "2025-02-02T23:54:47.473173321Z",
+  "last_saved": "2025-02-03T03:58:37.386954296Z",
   "illness": false,
   "last_status": "😴 Sleeping",
   "logs": [
@@ -54,6 +54,16 @@
     },
     {
       "time": "2025-02-02T23:53:54.305036508Z",
+      "old_status": "😸 Happy",
+      "new_status": "😴 Sleeping"
+    },
+    {
+      "time": "2025-02-03T03:57:27.782718075Z",
+      "old_status": "😴 Sleeping",
+      "new_status": "😸 Happy"
+    },
+    {
+      "time": "2025-02-03T03:57:37.564751733Z",
       "old_status": "😸 Happy",
       "new_status": "😴 Sleeping"
     }
