@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"strings"
 	"math/rand"
 	"os"
 	"path/filepath"
@@ -580,7 +581,14 @@ func max(a, b int) int {
 
 func main() {
 	updateOnly := flag.Bool("u", false, "Update pet stats only, don't run UI")
+	statusFlag := flag.Bool("status", false, "Output current status emoji")
 	flag.Parse()
+
+	if *statusFlag {
+		pet := loadState()
+		fmt.Print(strings.Split(getStatus(pet), " ")[0])
+		return
+	}
 
 	if *updateOnly {
 		pet := loadState() // This already updates based on elapsed time
