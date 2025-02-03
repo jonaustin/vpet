@@ -27,9 +27,7 @@ A Tamagotchi-style virtual pet that lives in your terminal with tmux integration
 
 ## Tmux Integration
 
-![Screenshot](tmux-pet-example.png)
-
-1. Save your pet's status in tmux status line:
+1. Add to your tmux configuration:
 ```bash
 # ~/.tmux.conf
 set -g status-right "#(path/to/scripts/pet_status.sh)"
@@ -37,16 +35,20 @@ set -g status-right "#(path/to/scripts/pet_status.sh)"
 
 2. Create `pet_status.sh`:
 ```bash
-#!/bin/bash
+#!/usr/bin/env bash
+# Updates stats and outputs current status emoji
 VPET_BIN=path/to/vpet
-$VPET_BIN -u  # Update stats first
-$VPET_BIN -status  # Show current status
+$VPET_BIN -u  # Silent stats update
+$VPET_BIN -status  # Output current status emoji
 ```
 
 3. Make executable:
 ```bash
 chmod +x ~/scripts/pet_status.sh
 ```
+
+Displays one of these statuses:  
+😸 Happy | 🙀 Hungry | 😾 Tired | 😿 Sad | 😴 Sleeping | 💀 Dead
 
 ## Installation
 
