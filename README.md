@@ -40,6 +40,12 @@ cd vpet
 # 2. Build binary
 go build -o vpet main.go
 
+## Tmux
+
+The tmux integration is pretty hacky for now.
+
+Update VPET_DIR in vpet.tmux and run `bash vpet.tmux` once tmux is running.
+
 ## Gameplay
 
 ```bash

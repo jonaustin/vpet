@@ -1,6 +1,6 @@
 {
   "name": "Charm Pet",
-  "hunger": 75,
+  "hunger": 100,
   "happiness": 100,
   "energy": 60,
   "health": 100,
@@ -8,7 +8,7 @@
   "stage": 2,
   "sleeping": true,
   "dead": false,
-  "last_saved": "2025-02-03T03:58:37.386954296Z",
+  "last_saved": "2025-02-04T06:18:53.665827564Z",
   "illness": false,
   "last_status": "😴 Sleeping",
   "logs": [
@@ -64,6 +64,16 @@
     },
     {
       "time": "2025-02-03T03:57:37.564751733Z",
+      "old_status": "😸 Happy",
+      "new_status": "😴 Sleeping"
+    },
+    {
+      "time": "2025-02-04T05:38:25.069392201Z",
+      "old_status": "😴 Sleeping",
+      "new_status": "😸 Happy"
+    },
+    {
+      "time": "2025-02-04T05:38:30.356680612Z",
       "old_status": "😸 Happy",
       "new_status": "😴 Sleeping"
     }

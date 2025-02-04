@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 
+VPET_DIR=~/exp/vpet
 CURRENT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
 # Store the original status-left
@@ -7,8 +8,8 @@ ORIGINAL_STATUS=$(tmux show-option -gqv "status-left")
 
 # Function to update status
 update_status() {
-    go run ~/exp/vpet/main.go -u
-    local pet_status=$(go run ~/exp/vpet/main.go -status)
+    go run ${VPET_DIR}/main.go -u
+    local pet_status=$(go run ${VPET_DIR}/main.go -status)
     if [[ -z "$ORIGINAL_STATUS" ]]; then
         tmux set-option -g status-left "$pet_status"
     else
