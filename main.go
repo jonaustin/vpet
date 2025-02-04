@@ -517,22 +517,22 @@ func (m model) View() string {
 		{"Life Stage", lifeStage},
 	}
 
-	// Stats layout with fixed alignment
+	// Stats layout
 	for _, stat := range stats {
 		s += gameStyles.status.Render(
-			fmt.Sprintf("%s:%-10s%s\n", stat.name, "", stat.value),
+			fmt.Sprintf("%-10s %s\n", stat.name+":", stat.value),
 		)
 	}
-	s += gameStyles.status.Render(fmt.Sprintf("\nStatus:%-10s%s\n\n", "", getStatus(m.pet)))
+	s += gameStyles.status.Render(fmt.Sprintf("\n%-10s %s\n\n", "Status:", getStatus(m.pet)))
 
-	// Menu display with fixed alignment
+	// Menu display
 	choices := []string{"Feed", "Play", "Sleep", "Medicine", "Discipline", "Quit"}
 	for i, choice := range choices {
 		cursor := " "
 		if m.choice == i {
 			cursor = ">"
 		}
-		s += gameStyles.menu.Render(fmt.Sprintf("%s %s\n", cursor, choice))
+		s += gameStyles.menu.Render(fmt.Sprintf("%s %-10s\n", cursor, choice))
 	}
 
 	s += "\n" + gameStyles.status.Render("Use arrows to move • enter to select • q to quit")
