@@ -1,6 +1,6 @@
 # vpet - Terminal Virtual Pet
 
-A Tamagotchi-style virtual pet that lives in your terminal with tmux integration!
+A Tamagotchi-style virtual pet that lives in your terminal with tmux integration.
 
 ## Features
 
@@ -9,7 +9,7 @@ A Tamagotchi-style virtual pet that lives in your terminal with tmux integration
 - Natural aging with eventual death from old age (~3 days)
 - 4 Death Causes: Neglect, Starvation, Sickness, Old Age
 - Random illnesses requiring medicine
-- Permanent death state with memorial
+- Permanent death state
 
 📊 **Core Stats System**  
 - **Health**: Combined metric affected by all stats
@@ -27,26 +27,6 @@ A Tamagotchi-style virtual pet that lives in your terminal with tmux integration
 
 ## Tmux Integration
 
-1. Add to your tmux configuration:
-```bash
-# ~/.tmux.conf
-set -g status-right "#(path/to/scripts/pet_status.sh)"
-```
-
-2. Create `pet_status.sh`:
-```bash
-#!/usr/bin/env bash
-# Updates stats and outputs current status emoji
-VPET_BIN=path/to/vpet
-$VPET_BIN -u  # Silent stats update
-$VPET_BIN -status  # Output current status emoji
-```
-
-3. Make executable:
-```bash
-chmod +x ~/scripts/pet_status.sh
-```
-
 Displays one of these statuses:  
 😸 Happy | 🙀 Hungry | 😾 Tired | 😿 Sad | 😴 Sleeping | 💀 Dead
 
@@ -59,10 +39,6 @@ cd vpet
 
 # 2. Build binary
 go build -o vpet main.go
-
-# 3. Install to PATH
-sudo mv vpet /usr/local/bin/
-```
 
 ## Gameplay
 
