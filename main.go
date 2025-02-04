@@ -74,12 +74,6 @@ type model struct {
 	quitting bool
 }
 
-// UI styles
-type styles struct {
-	title  lipgloss.Style
-	status lipgloss.Style
-	menu   lipgloss.Style
-}
 
 // Helper function to modify stats and save immediately
 func (m *model) modifyStats(f func(*Pet)) {
