@@ -517,18 +517,11 @@ func (m model) View() string {
 		{"Life Stage", lifeStage},
 	}
 
-	// Two column layout
-	for i := 0; i < len(stats); i += 2 {
-		left := stats[i]
-		right := ""
-		if i+1 < len(stats) {
-			right = fmt.Sprintf("%-10s %s", stats[i+1].name+":", stats[i+1].value)
-		}
+	// One column layout
+	for _, stat := range stats {
 		s += gameStyles.status.Render(
-			fmt.Sprintf("%-30s %s\n",
-				fmt.Sprintf("%-10s %s", left.name+":", left.value),
-				right,
-			))
+			fmt.Sprintf("%-10s %s\n", stat.name+":", stat.value),
+		)
 	}
 	s += gameStyles.status.Render(fmt.Sprintf("\n%-10s %s\n\n", "Status:", getStatus(m.pet)))
 
