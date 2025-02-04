@@ -158,17 +158,31 @@ var (
 	timeNow     = func() time.Time { return time.Now().UTC() } // Always use UTC time
 	randFloat64 = rand.Float64                                 // Expose random function for testing
 
-	gameStyles = styles{
+	gameStyles = struct {
+		title   lipgloss.Style
+		status  lipgloss.Style
+		menu    lipgloss.Style
+		menuBox lipgloss.Style
+		stats   lipgloss.Style
+	}{
 		title: lipgloss.NewStyle().
 			Bold(true).
 			Foreground(lipgloss.Color("#FF75B5")).
-			MarginBottom(1),
+			Padding(0, 1),
 
 		status: lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#FF75B5")),
+			Foreground(lipgloss.Color("#FF75B5")).
+			Width(30),
+
+		stats: lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#FF75B5")).
+			Width(30),
 
 		menu: lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#FF75B5")),
+
+		menuBox: lipgloss.NewStyle().
+			Padding(0, 2),
 	}
 )
 
@@ -471,20 +485,34 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m model) View() string {
 	if m.pet.Dead {
-		s := gameStyles.title.Render("💀 " + m.pet.Name + " 💀\n\n")
-		s += gameStyles.status.Render("Your pet has passed away...\n")
-		s += gameStyles.status.Render("It will be remembered forever.\n\n")
-		s += gameStyles.status.Render("Press q to exit")
-		return s
+		return m.deadView()
 	}
-
 	if m.quitting {
 		return "Thanks for playing!\n"
 	}
 
-	s := gameStyles.title.Render("😺 " + m.pet.Name + " 😺\n\n")
+	// Build the view from components
+	title := gameStyles.title.Render("😺 " + m.pet.Name + " 😺")
+	stats := m.renderStats()
+	status := m.renderStatus()
+	menu := m.renderMenu()
 
-	// Status display
+	// Join all sections vertically
+	return lipgloss.JoinVertical(
+		lipgloss.Left,
+		title,
+		"",
+		stats,
+		"",
+		status,
+		"",
+		menu,
+		"",
+		gameStyles.status.Render("Use arrows to move • enter to select • q to quit"),
+	)
+}
+
+func (m model) renderStats() string {
 	lifeStage := "Baby"
 	switch m.pet.LifeStage {
 	case 1:
@@ -494,43 +522,54 @@ func (m model) View() string {
 	}
 
 	stats := []struct {
-		name  string
-		value string
+		name, value string
 	}{
 		{"Hunger", fmt.Sprintf("%d%%", m.pet.Hunger)},
 		{"Happiness", fmt.Sprintf("%d%%", m.pet.Happiness)},
 		{"Energy", fmt.Sprintf("%d%%", m.pet.Energy)},
 		{"Health", fmt.Sprintf("%d%%", m.pet.Health)},
 		{"Age", fmt.Sprintf("%dh", m.pet.Age)},
-		{"Illness", func() string {
-			if m.pet.Illness {
-				return "Yes"
-			}
-			return "No"
-		}()},
+		{"Illness", map[bool]string{true: "Yes", false: "No"}[m.pet.Illness]},
 		{"Life Stage", lifeStage},
 	}
 
-	// Stats layout
+	var lines []string
 	for _, stat := range stats {
-		s += gameStyles.status.Render(
-			fmt.Sprintf("%-10s %s\n", stat.name+":", stat.value),
-		)
+		lines = append(lines, fmt.Sprintf("%-10s %s", stat.name+":", stat.value))
 	}
-	s += gameStyles.status.Render(fmt.Sprintf("\n%-10s %s\n\n", "Status:", getStatus(m.pet)))
 
-	// Menu display
+	return gameStyles.stats.Render(strings.Join(lines, "\n"))
+}
+
+func (m model) renderStatus() string {
+	return gameStyles.status.Render(fmt.Sprintf("Status: %s", getStatus(m.pet)))
+}
+
+func (m model) renderMenu() string {
 	choices := []string{"Feed", "Play", "Sleep", "Medicine", "Discipline", "Quit"}
+	var menuItems []string
+
 	for i, choice := range choices {
 		cursor := " "
 		if m.choice == i {
 			cursor = ">"
 		}
-		s += gameStyles.menu.Render(fmt.Sprintf("%s %-10s\n", cursor, choice))
+		menuItems = append(menuItems, fmt.Sprintf("%s %s", cursor, choice))
 	}
 
-	s += "\n" + gameStyles.status.Render("Use arrows to move • enter to select • q to quit")
-	return s
+	return gameStyles.menuBox.Render(strings.Join(menuItems, "\n"))
+}
+
+func (m model) deadView() string {
+	return lipgloss.JoinVertical(
+		lipgloss.Center,
+		gameStyles.title.Render("💀 "+m.pet.Name+" 💀"),
+		"",
+		gameStyles.status.Render("Your pet has passed away..."),
+		gameStyles.status.Render("It will be remembered forever."),
+		"",
+		gameStyles.status.Render("Press q to exit"),
+	)
 }
 
 func getStatus(p Pet) string {
