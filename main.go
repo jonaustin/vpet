@@ -381,12 +381,9 @@ func loadState() Pet {
 
 func saveState(p *Pet) {
 	now := timeNow()
-	if !p.LastSaved.IsZero() {
-		elapsed := now.Sub(p.LastSaved)
-		hoursElapsed := int(elapsed.Hours())
-		if hoursElapsed > 0 {
-			p.Age += hoursElapsed
-		}
+	if len(p.Logs) > 0 {
+		birthTime := p.Logs[0].Time
+		p.Age = int(now.Sub(birthTime).Hours())
 	}
 	p.LastSaved = now
 
