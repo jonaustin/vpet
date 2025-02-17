@@ -380,6 +380,16 @@ func loadState() Pet {
 }
 
 func saveState(p *Pet) {
+	now := timeNow()
+	if !p.LastSaved.IsZero() {
+		elapsed := now.Sub(p.LastSaved)
+		hoursElapsed := int(elapsed.Hours())
+		if hoursElapsed > 0 {
+			p.Age += hoursElapsed
+		}
+	}
+	p.LastSaved = now
+
 	// Add status change tracking
 	currentStatus := getStatus(*p)
 	if p.LastStatus == "" {
@@ -392,8 +402,7 @@ func saveState(p *Pet) {
 			p.Logs = []LogEntry{}
 		}
 
-		now := timeNow()
-		// Add new log entry
+		// Add new log entry using the already computed 'now'
 		newLog := LogEntry{
 			Time:      now,
 			OldStatus: p.LastStatus,
@@ -401,7 +410,6 @@ func saveState(p *Pet) {
 		}
 		p.Logs = append(p.Logs, newLog)
 		p.LastStatus = currentStatus
-		p.LastSaved = now
 	}
 	data, err := json.MarshalIndent(p, "", "  ")
 	if err != nil {
