@@ -34,7 +34,7 @@ const (
 	medicineEffect     = 30            // Health restored by medicine
 	minNaturalLifespan = 72            // Hours before natural death possible
 
-	// Stat change rates
+	// Stat change rates (per hour)
 	hungerDecreaseRate    = 5
 	sleepingHungerRate    = 3 // 70% of normal rate
 	energyDecreaseRate    = 5
@@ -73,7 +73,6 @@ type model struct {
 	choice   int
 	quitting bool
 }
-
 
 // Helper function to modify stats and save immediately
 func (m *model) modifyStats(f func(*Pet)) {
