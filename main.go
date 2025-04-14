@@ -310,7 +310,15 @@ func loadState() Pet {
 
 	// Update age and life stage
 	pet.Age += hoursElapsed
-	pet.LifeStage = min(pet.Age/ageStageThresholds, 2)
+	
+	// Calculate life stage based on age
+	if pet.Age < ageStageThresholds {
+		pet.LifeStage = 0 // Baby
+	} else if pet.Age < 2*ageStageThresholds {
+		pet.LifeStage = 1 // Child
+	} else {
+		pet.LifeStage = 2 // Adult
+	}
 
 	// Check death condition first
 	if pet.Dead {
