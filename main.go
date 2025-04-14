@@ -256,7 +256,7 @@ func getConfigPath() string {
 	}
 	configDir, err := os.UserHomeDir()
 	if err != nil {
-		fmt.Printf("Error getting home directory: %v\n", err)
+		log.Printf("Error getting home directory: %v\n", err)
 		os.Exit(1)
 	}
 
@@ -264,7 +264,7 @@ func getConfigPath() string {
 	dirPath := filepath.Dir(configPath)
 
 	if err := os.MkdirAll(dirPath, 0755); err != nil {
-		fmt.Printf("Error creating config directory: %v\n", err)
+		log.Printf("Error creating config directory: %v\n", err)
 		os.Exit(1)
 	}
 
@@ -276,7 +276,7 @@ func loadState() Pet {
 	// Ensure config directory exists
 	configDir := filepath.Dir(configPath)
 	if err := os.MkdirAll(configDir, 0755); err != nil {
-		fmt.Printf("Error creating config directory: %v\n", err)
+		log.Printf("Error creating config directory: %v\n", err)
 		os.Exit(1)
 	}
 
