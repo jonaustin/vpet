@@ -46,6 +46,7 @@ const (
 	feedHappinessIncrease = 10
 	playHappinessIncrease = 30
 	playEnergyDecrease    = 20
+	playHungerDecrease    = 10
 )
 
 // Pet represents the virtual pet's state
@@ -624,10 +625,11 @@ func max(a, b int) int {
 }
 
 func main() {
+	// Configure logging to write to ./vpet.log
 	logFile := "./vpet.log"
 	logFileHandle, err := os.OpenFile(logFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
 	if err != nil {
-		fmt.Println(err)
+		fmt.Println("Error opening log file:", err)
 		return
 	}
 	defer logFileHandle.Close()
