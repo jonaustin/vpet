@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"log"
 	"math/rand"
 	"os"
 	"path/filepath"
@@ -85,6 +86,7 @@ func (m *model) administerMedicine() {
 	m.modifyStats(func(p *Pet) {
 		p.Illness = false
 		p.Health = min(p.Health+medicineEffect, maxStat)
+		log.Printf("Administered medicine. Health is now %d", p.Health)
 	})
 }
 
@@ -92,6 +94,7 @@ func (m *model) discipline() {
 	m.modifyStats(func(p *Pet) {
 		p.Happiness = max(p.Happiness-10, minStat)
 		p.Hunger = max(p.Hunger-5, minStat)
+		log.Printf("Disciplined pet. Happiness is now %d, Hunger is now %d", p.Happiness, p.Hunger)
 	})
 }
 func (m *model) feed() {
@@ -99,6 +102,7 @@ func (m *model) feed() {
 		p.Sleeping = false
 		p.Hunger = min(p.Hunger+feedHungerIncrease, maxStat)
 		p.Happiness = min(p.Happiness+feedHappinessIncrease, maxStat)
+		log.Printf("Fed pet. Hunger is now %d, Happiness is now %d", p.Hunger, p.Happiness)
 	})
 }
 
@@ -109,12 +113,14 @@ func (m *model) play() {
 		p.Happiness = min(p.Happiness+playHappinessIncrease, maxStat)
 		p.Energy = max(p.Energy-playEnergyDecrease, minStat)
 		p.Hunger = max(p.Hunger-playHungerDecrease, minStat)
+		log.Printf("Played with pet. Happiness is now %d, Energy is now %d, Hunger is now %d", p.Happiness, p.Energy, p.Hunger)
 	})
 }
 
 func (m *model) toggleSleep() {
 	m.modifyStats(func(p *Pet) {
 		p.Sleeping = !p.Sleeping
+		log.Printf("Pet is now sleeping: %t", p.Sleeping)
 	})
 }
 
@@ -127,12 +133,14 @@ func (m *model) updateHourlyStats(t time.Time) {
 				hungerRate = sleepingHungerRate
 			}
 			p.Hunger = max(p.Hunger-hungerRate, minStat)
+			log.Printf("Hunger decreased to %d", p.Hunger)
 		}
 
 		if !p.Sleeping {
 			// Energy decreases every 2 hours when awake
 			if int(t.Minute())%120 == 0 {
 				p.Energy = max(p.Energy-energyDecreaseRate, minStat)
+				log.Printf("Energy decreased to %d", p.Energy)
 			}
 		} else {
 			// Sleeping recovers energy faster
@@ -141,6 +149,7 @@ func (m *model) updateHourlyStats(t time.Time) {
 				if p.Energy >= maxStat {
 					p.Sleeping = false
 				}
+				log.Printf("Energy increased to %d", p.Energy)
 			}
 		}
 
@@ -148,6 +157,7 @@ func (m *model) updateHourlyStats(t time.Time) {
 		if p.Hunger < 30 || p.Energy < 30 {
 			if int(t.Minute())%60 == 0 {
 				p.Happiness = max(p.Happiness-2, 0)
+				log.Printf("Happiness decreased to %d", p.Happiness)
 			}
 		}
 	})
@@ -233,6 +243,7 @@ func newPet(testCfg *TestConfig) Pet {
 		OldStatus: "",
 		NewStatus: pet.LastStatus,
 	}}
+	log.Printf("Created new pet: %s", pet.Name)
 	return pet
 }
 
@@ -271,23 +282,24 @@ func loadState() Pet {
 
 	data, err := os.ReadFile(configPath)
 	if err != nil {
+		log.Printf("Error reading state file: %v. Creating new pet.", err)
 		return newPet(nil)
 	}
 
 	var pet Pet
 	if err := json.Unmarshal(data, &pet); err != nil {
-		fmt.Printf("Error loading state: %v\n", err)
-		os.Exit(1)
+		log.Printf("Error loading state: %v. Creating new pet.", err)
+		return newPet(nil)
 	}
 
 	// Update stats based on elapsed time and check for death
 	now := timeNow()
-	fmt.Printf("last saved: %s\n", pet.LastSaved.UTC())
+	log.Printf("last saved: %s\n", pet.LastSaved.UTC())
 	elapsed := now.Sub(pet.LastSaved.UTC()) // Ensure UTC comparison
-	fmt.Printf("elapsed %f\n", elapsed.Seconds())
+	log.Printf("elapsed %f\n", elapsed.Seconds())
 	hoursElapsed := int(elapsed.Hours())
 	totalMinutes := int(elapsed.Minutes())
-	fmt.Printf("total minutes: %d\n", totalMinutes)
+	log.Printf("total minutes: %d\n", totalMinutes)
 
 	// Store current status before updates
 	oldStatus := pet.LastStatus
@@ -413,11 +425,11 @@ func saveState(p *Pet) {
 	}
 	data, err := json.MarshalIndent(p, "", "  ")
 	if err != nil {
-		fmt.Printf("Error saving state: %v\n", err)
+		log.Printf("Error saving state: %v", err)
 		return
 	}
 	if err := os.WriteFile(getConfigPath(), data, 0644); err != nil {
-		fmt.Printf("Error writing state: %v\n", err)
+		log.Printf("Error writing state: %v", err)
 	}
 }
 
@@ -631,7 +643,7 @@ func main() {
 
 	p := tea.NewProgram(initialModel(nil))
 	if _, err := p.Run(); err != nil {
-		fmt.Printf("Alas, there's been an error: %v", err)
+		log.Printf("Alas, there's been an error: %v", err)
 		os.Exit(1)
 	}
 }
