@@ -46,7 +46,6 @@ const (
 	feedHappinessIncrease = 10
 	playHappinessIncrease = 30
 	playEnergyDecrease    = 20
-	playHungerDecrease    = 10
 )
 
 // Pet represents the virtual pet's state
@@ -137,7 +136,7 @@ func (m *model) updateHourlyStats(t time.Time) {
 		}
 
 		if !p.Sleeping {
-			// Energy decreases every 2 hours when awake
+			// Energy decreases when awake
 			if int(t.Minute())%120 == 0 {
 				p.Energy = max(p.Energy-energyDecreaseRate, minStat)
 				log.Printf("Energy decreased to %d", p.Energy)
@@ -625,6 +624,15 @@ func max(a, b int) int {
 }
 
 func main() {
+	logFile := "./vpet.log"
+	logFileHandle, err := os.OpenFile(logFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	defer logFileHandle.Close()
+	log.SetOutput(logFileHandle)
+
 	updateOnly := flag.Bool("u", false, "Update pet stats only, don't run UI")
 	statusFlag := flag.Bool("status", false, "Output current status emoji")
 	flag.Parse()
