@@ -92,7 +92,7 @@ func (m *model) administerMedicine() {
 
 func (m *model) discipline() {
 	m.modifyStats(func(p *Pet) {
-		p.Happiness = max(p.Happiness-10, minStat)
+		p.Happiness = int(math.Max(float64(p.Happiness - 10), float64(minStat)))
 		p.Hunger = max(p.Hunger-5, minStat)
 		log.Printf("Disciplined pet. Happiness is now %d, Hunger is now %d", p.Happiness, p.Hunger)
 	})
