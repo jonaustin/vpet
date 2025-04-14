@@ -509,7 +509,9 @@ func TestAging(t *testing.T) {
 	t.Run("Age increases over time", func(t *testing.T) {
 		// Set current time
 		currentTime := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
+		originalTimeNow := timeNow
 		timeNow = func() time.Time { return currentTime }
+		defer func() { timeNow = originalTimeNow }()
 
 		// Create pet 5 hours ago
 		fiveHoursAgo := currentTime.Add(-5 * time.Hour)
@@ -517,7 +519,36 @@ func TestAging(t *testing.T) {
 			LastSavedTime: fiveHoursAgo,
 		}
 		pet := newPet(testCfg)
+		
+		// Set age directly to avoid double-counting
+		pet.Age = 0
+		
+		// Manually set the birth time in logs
+		pet.Logs = []LogEntry{{
+			Time:      fiveHoursAgo,
+			OldStatus: "",
+			NewStatus: "😸 Happy",
+		}}
 		saveState(&pet)
+
+		// Fix the LastSaved time in the saved file
+		data, err := os.ReadFile(testConfigPath)
+		if err != nil {
+			t.Fatalf("Failed to read test file: %v", err)
+		}
+		var savedPet Pet
+		if err := json.Unmarshal(data, &savedPet); err != nil {
+			t.Fatalf("Failed to parse test file: %v", err)
+		}
+		savedPet.LastSaved = fiveHoursAgo
+		savedPet.Age = 0 // Reset age in the file
+		data, err = json.MarshalIndent(savedPet, "", "  ")
+		if err != nil {
+			t.Fatalf("Failed to marshal pet: %v", err)
+		}
+		if err := os.WriteFile(testConfigPath, data, 0644); err != nil {
+			t.Fatalf("Failed to write test file: %v", err)
+		}
 
 		// Load state which will process elapsed time
 		loadedPet := loadState()
@@ -530,7 +561,9 @@ func TestAging(t *testing.T) {
 	t.Run("Life stages transition correctly", func(t *testing.T) {
 		// Set current time
 		currentTime := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
+		originalTimeNow := timeNow
 		timeNow = func() time.Time { return currentTime }
+		defer func() { timeNow = originalTimeNow }()
 
 		testCases := []struct {
 			hours     int
@@ -547,15 +580,56 @@ func TestAging(t *testing.T) {
 
 		for _, tc := range testCases {
 			t.Run(fmt.Sprintf("%d hours = %s", tc.hours, tc.stageName), func(t *testing.T) {
-				testTime := currentTime.Add(time.Duration(-tc.hours) * time.Hour)
+				// Create a new pet with birth time set to the correct time in the past
+				birthTime := currentTime.Add(time.Duration(-tc.hours) * time.Hour)
+				
+				// Create a pet with LastSaved = birthTime (no elapsed time yet)
 				testCfg := &TestConfig{
-					LastSavedTime: testTime,
+					LastSavedTime: birthTime,
 				}
 				pet := newPet(testCfg)
+				
+				// Reset age and life stage to ensure they're calculated correctly
+				pet.Age = 0
+				pet.LifeStage = 0
+				
+				// Set birth time in logs
+				pet.Logs = []LogEntry{{
+					Time:      birthTime,
+					OldStatus: "",
+					NewStatus: "😸 Happy",
+				}}
+				
+				// Save with these initial values
 				saveState(&pet)
-
+				
+				// Modify the saved file to ensure LastSaved is exactly at birth time
+				data, err := os.ReadFile(testConfigPath)
+				if err != nil {
+					t.Fatalf("Failed to read test file: %v", err)
+				}
+				var savedPet Pet
+				if err := json.Unmarshal(data, &savedPet); err != nil {
+					t.Fatalf("Failed to parse test file: %v", err)
+				}
+				savedPet.LastSaved = birthTime
+				savedPet.Age = 0
+				savedPet.LifeStage = 0
+				data, err = json.MarshalIndent(savedPet, "", "  ")
+				if err != nil {
+					t.Fatalf("Failed to marshal pet: %v", err)
+				}
+				if err := os.WriteFile(testConfigPath, data, 0644); err != nil {
+					t.Fatalf("Failed to write test file: %v", err)
+				}
+				
+				// Now load the pet, which should calculate age based on elapsed time
 				loadedPet := loadState()
-
+				
+				if loadedPet.Age != tc.hours {
+					t.Errorf("Expected age %d, got %d", tc.hours, loadedPet.Age)
+				}
+				
 				if loadedPet.LifeStage != tc.expected {
 					t.Errorf("At %d hours: Expected life stage %d (%s), got %d",
 						tc.hours, tc.expected, tc.stageName, loadedPet.LifeStage)
