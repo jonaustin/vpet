@@ -282,9 +282,12 @@ func loadState() Pet {
 
 	// Update stats based on elapsed time and check for death
 	now := timeNow()
+	fmt.Printf("last saved: %s\n", pet.LastSaved.UTC())
 	elapsed := now.Sub(pet.LastSaved.UTC()) // Ensure UTC comparison
+	fmt.Printf("elapsed %f\n", elapsed.Seconds())
 	hoursElapsed := int(elapsed.Hours())
 	totalMinutes := int(elapsed.Minutes())
+	fmt.Printf("total minutes: %d\n", totalMinutes)
 
 	// Store current status before updates
 	oldStatus := pet.LastStatus
