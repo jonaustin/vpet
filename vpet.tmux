@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-VPET_DIR=~/exp/vpet
+VPET_DIR=~/code/vpet
 CURRENT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
 # Store the original status-left
