@@ -30,9 +30,9 @@ func TestDeathConditions(t *testing.T) {
 	cleanup := setupTestFile(t)
 	defer cleanup()
 
-	// Create pet that has been critical for 5 hours (new 4h threshold)
+	// Create pet that has been critical for 13 hours (exceeds 12h threshold)
 	currentTime := time.Now().UTC()
-	criticalStart := currentTime.Add(-5 * time.Hour)
+	criticalStart := currentTime.Add(-13 * time.Hour)
 	testCfg := &TestConfig{
 		InitialHunger:    lowStatThreshold - 1,
 		InitialHappiness: lowStatThreshold - 1,
@@ -65,10 +65,11 @@ func TestDeathConditions(t *testing.T) {
 	loadedPet := loadState()
 
 	if !loadedPet.Dead {
-		t.Error("Expected pet to be dead after 4+ hours in critical state")
+		t.Error("Expected pet to be dead after 12+ hours in critical state")
 	}
-	if loadedPet.CauseOfDeath != "Neglect" {
-		t.Errorf("Expected death cause 'Neglect', got '%s'", loadedPet.CauseOfDeath)
+	// Death cause could be Neglect or Starvation depending on which stat hit 0 first
+	if loadedPet.CauseOfDeath != "Neglect" && loadedPet.CauseOfDeath != "Starvation" {
+		t.Errorf("Expected death cause 'Neglect' or 'Starvation', got '%s'", loadedPet.CauseOfDeath)
 	}
 }
 
@@ -571,11 +572,11 @@ func TestAging(t *testing.T) {
 			stageName string
 		}{
 			{0, 0, "Baby"},
-			{23, 0, "Baby"},
-			{24, 1, "Child"},
-			{47, 1, "Child"},
-			{48, 2, "Adult"},
-			{100, 2, "Adult"}, // Should stay adult
+			{47, 0, "Baby"},
+			{48, 1, "Child"},
+			{95, 1, "Child"},
+			{96, 2, "Adult"},
+			{200, 2, "Adult"}, // Should stay adult
 		}
 
 		for _, tc := range testCases {

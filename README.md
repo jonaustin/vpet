@@ -4,9 +4,9 @@ A Tamagotchi-style virtual pet that lives in your terminal with tmux integration
 
 ## Features
 
-🖤 **Lifecycle Mechanics**  
-- 3 Life Stages: Baby (0-24h), Child (24-48h), Adult (48h+)
-- Natural aging with eventual death from old age (~3 days)
+🖤 **Lifecycle Mechanics**
+- 3 Life Stages: Baby (0-48h), Child (48-96h), Adult (96h+)
+- Natural aging with eventual death from old age (~1 week)
 - 4 Death Causes: Neglect, Starvation, Sickness, Old Age
 - Random illnesses requiring medicine
 - Permanent death state
@@ -63,12 +63,12 @@ vpet -status
 
 | Stat      | Awake Rate | Sleeping Rate | Care Action   |
 |-----------|------------|---------------|---------------|
-| Health    | -5%/hr*    | -3%/hr*       | Medicine +30% |
+| Health    | -2%/hr*    | -1%/hr*       | Medicine +30% |
 | Hunger    | -5%/hr     | -3%/hr        | Feed +30%     |
 | Energy    | -5%/2hrs   | +10%/hr       | Sleep         |
 | Happiness | -2%/hr**   | -2%/hr**      | Play +30%     |
 
-*When any stat <30%  
+*When any stat <15%
 **When Hunger/Energy <30%
 
 ## Controls

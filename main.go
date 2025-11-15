@@ -28,12 +28,12 @@ const (
 	maxStat            = 100
 	minStat            = 0
 	lowStatThreshold   = 30
-	deathTimeThreshold = 4 * time.Hour // Shorter Tamagotchi-style timer
-	healthDecreaseRate = 2             // Health loss per hour
-	ageStageThresholds = 24            // Hours per life stage
-	illnessChance      = 0.1           // 10% chance per hour when health <50
-	medicineEffect     = 30            // Health restored by medicine
-	minNaturalLifespan = 72            // Hours before natural death possible
+	deathTimeThreshold = 12 * time.Hour // Time in critical state before death
+	healthDecreaseRate = 2              // Health loss per hour
+	ageStageThresholds = 48             // Hours per life stage
+	illnessChance      = 0.1            // 10% chance per hour when health <50
+	medicineEffect     = 30             // Health restored by medicine
+	minNaturalLifespan = 168            // Hours before natural death possible (~1 week)
 
 	// Stat change rates (per hour)
 	hungerDecreaseRate    = 5
@@ -161,12 +161,12 @@ func (m *model) updateHourlyStats(t time.Time) {
 			}
 		}
 
-		// Health decreases when any stat is low
-		if p.Hunger < lowStatThreshold || p.Happiness < lowStatThreshold || p.Energy < lowStatThreshold {
+		// Health decreases when any stat is critically low
+		if p.Hunger < 15 || p.Happiness < 15 || p.Energy < 15 {
 			if int(t.Minute()) == 0 { // Every hour
-				healthRate := 5 // 5%/hr when awake
+				healthRate := 2 // 2%/hr when awake
 				if p.Sleeping {
-					healthRate = 3 // 3%/hr when sleeping
+					healthRate = 1 // 1%/hr when sleeping
 				}
 				p.Health = max(p.Health-healthRate, minStat)
 				log.Printf("Health decreased to %d", p.Health)
@@ -381,11 +381,11 @@ func loadState() Pet {
 		pet.Illness = false
 	}
 
-	// Health decreases when any stat is low
-	if pet.Hunger < lowStatThreshold || pet.Happiness < lowStatThreshold || pet.Energy < lowStatThreshold {
-		healthRate := 5 // 5%/hr when awake
+	// Health decreases when any stat is critically low
+	if pet.Hunger < 15 || pet.Happiness < 15 || pet.Energy < 15 {
+		healthRate := 2 // 2%/hr when awake
 		if pet.Sleeping {
-			healthRate = 3 // 3%/hr when sleeping
+			healthRate = 1 // 1%/hr when sleeping
 		}
 		healthLoss := (totalMinutes / 60) * healthRate
 		pet.Health = max(pet.Health-healthLoss, minStat)
