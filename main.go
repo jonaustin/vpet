@@ -1,7 +1,6 @@
 package main
 
 import (
-	"math"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -93,7 +92,7 @@ func (m *model) administerMedicine() {
 
 func (m *model) discipline() {
 	m.modifyStats(func(p *Pet) {
-		p.Happiness = int(math.Max(float64(p.Happiness-10), float64(minStat)))
+		p.Happiness = max(p.Happiness-10, minStat)
 		p.Hunger = max(p.Hunger-5, minStat)
 		log.Printf("Disciplined pet. Happiness is now %d, Hunger is now %d", p.Happiness, p.Hunger)
 	})
@@ -128,7 +127,7 @@ func (m *model) toggleSleep() {
 func (m *model) updateHourlyStats(t time.Time) {
 	m.modifyStats(func(p *Pet) {
 		// Hunger decreases every hour (reduced rate while sleeping)
-		if int(t.Minute())%60 == 0 {
+		if int(t.Minute()) == 0 {
 			hungerRate := hungerDecreaseRate
 			if p.Sleeping {
 				hungerRate = sleepingHungerRate
@@ -138,14 +137,14 @@ func (m *model) updateHourlyStats(t time.Time) {
 		}
 
 		if !p.Sleeping {
-			// Energy decreases when awake
-			if int(t.Minute())%120 == 0 {
+			// Energy decreases every 2 hours when awake
+			if int(t.Hour())%2 == 0 && int(t.Minute()) == 0 {
 				p.Energy = max(p.Energy-energyDecreaseRate, minStat)
 				log.Printf("Energy decreased to %d", p.Energy)
 			}
 		} else {
 			// Sleeping recovers energy faster
-			if int(t.Minute())%60 == 0 {
+			if int(t.Minute()) == 0 {
 				p.Energy = min(p.Energy+energyRecoveryRate, maxStat)
 				if p.Energy >= maxStat {
 					p.Sleeping = false
@@ -156,9 +155,21 @@ func (m *model) updateHourlyStats(t time.Time) {
 
 		// Happiness affected by hunger and energy
 		if p.Hunger < 30 || p.Energy < 30 {
-			if int(t.Minute())%60 == 0 {
+			if int(t.Minute()) == 0 {
 				p.Happiness = max(p.Happiness-2, 0)
 				log.Printf("Happiness decreased to %d", p.Happiness)
+			}
+		}
+
+		// Health decreases when any stat is low
+		if p.Hunger < lowStatThreshold || p.Happiness < lowStatThreshold || p.Energy < lowStatThreshold {
+			if int(t.Minute()) == 0 { // Every hour
+				healthRate := 5 // 5%/hr when awake
+				if p.Sleeping {
+					healthRate = 3 // 3%/hr when sleeping
+				}
+				p.Health = max(p.Health-healthRate, minStat)
+				log.Printf("Health decreased to %d", p.Health)
 			}
 		}
 	})
@@ -210,8 +221,13 @@ type TestConfig struct {
 
 // newPet creates a new pet with default values or test values if provided
 func newPet(testCfg *TestConfig) Pet {
+	now := timeNow() // Already UTC
+	var pet Pet
+	var birthTime time.Time
+
 	if testCfg != nil {
-		return Pet{
+		birthTime = testCfg.LastSavedTime
+		pet = Pet{
 			Name:      defaultPetName,
 			Hunger:    testCfg.InitialHunger,
 			Happiness: testCfg.InitialHappiness,
@@ -223,24 +239,26 @@ func newPet(testCfg *TestConfig) Pet {
 			LastSaved: testCfg.LastSavedTime,
 			Illness:   testCfg.Illness,
 		}
+	} else {
+		birthTime = now
+		pet = Pet{
+			Name:      defaultPetName,
+			Hunger:    maxStat,
+			Happiness: maxStat,
+			Energy:    maxStat,
+			Health:    maxStat,
+			Age:       0,
+			LifeStage: 0,
+			Sleeping:  false,
+			LastSaved: now,
+			Illness:   false,
+		}
 	}
-	now := timeNow() // Already UTC
-	pet := Pet{
-		Name:      defaultPetName,
-		Hunger:    maxStat,
-		Happiness: maxStat,
-		Energy:    maxStat,
-		Health:    maxStat,
-		Age:       0,
-		LifeStage: 0,
-		Sleeping:  false,
-		LastSaved: now,
-		Illness:   false,
-	}
+
 	pet.LastStatus = getStatus(pet)
-	// Add initial log entry
+	// Add initial log entry with birth time
 	pet.Logs = []LogEntry{{
-		Time:      now,
+		Time:      birthTime,
 		OldStatus: "",
 		NewStatus: pet.LastStatus,
 	}}
@@ -298,7 +316,6 @@ func loadState() Pet {
 	log.Printf("last saved: %s\n", pet.LastSaved.UTC())
 	elapsed := now.Sub(pet.LastSaved.UTC()) // Ensure UTC comparison
 	log.Printf("elapsed %f\n", elapsed.Seconds())
-	hoursElapsed := int(elapsed.Hours())
 	totalMinutes := int(elapsed.Minutes())
 	log.Printf("total minutes: %d\n", totalMinutes)
 
@@ -309,8 +326,10 @@ func loadState() Pet {
 	}
 
 	// Update age and life stage
-	pet.Age += hoursElapsed
-	
+	// Calculate age from birth time to avoid drift from integer truncation
+	birthTime := pet.Logs[0].Time
+	pet.Age = int(now.Sub(birthTime).Hours())
+
 	// Calculate life stage based on age
 	if pet.Age < ageStageThresholds {
 		pet.LifeStage = 0 // Baby
@@ -362,10 +381,14 @@ func loadState() Pet {
 		pet.Illness = false
 	}
 
-	// Calculate health degradation
-	healthLoss := hoursElapsed * healthDecreaseRate
-	if pet.Health > 0 {
-		pet.Health = max(pet.Health-healthLoss, 0)
+	// Health decreases when any stat is low
+	if pet.Hunger < lowStatThreshold || pet.Happiness < lowStatThreshold || pet.Energy < lowStatThreshold {
+		healthRate := 5 // 5%/hr when awake
+		if pet.Sleeping {
+			healthRate = 3 // 3%/hr when sleeping
+		}
+		healthLoss := (totalMinutes / 60) * healthRate
+		pet.Health = max(pet.Health-healthLoss, minStat)
 	}
 
 	// Check if any critical stat is below threshold
@@ -389,14 +412,14 @@ func loadState() Pet {
 				pet.CauseOfDeath = "Sickness"
 			}
 		}
-
-		// Check for natural death from old age
-		if pet.Age >= minNaturalLifespan && rand.Float64() < float64(pet.Age-minNaturalLifespan)/1000 {
-			pet.Dead = true
-			pet.CauseOfDeath = "Old Age"
-		}
 	} else {
 		pet.CriticalStartTime = nil // Reset if recovered
+	}
+
+	// Check for natural death from old age (independent of critical state)
+	if pet.Age >= minNaturalLifespan && randFloat64() < float64(pet.Age-minNaturalLifespan)/1000 {
+		pet.Dead = true
+		pet.CauseOfDeath = "Old Age"
 	}
 
 	pet.LastSaved = now
@@ -405,10 +428,9 @@ func loadState() Pet {
 
 func saveState(p *Pet) {
 	now := timeNow()
-	if len(p.Logs) > 0 {
-		birthTime := p.Logs[0].Time
-		p.Age = int(now.Sub(birthTime).Hours())
-	}
+	// Calculate age from birth time
+	birthTime := p.Logs[0].Time
+	p.Age = int(now.Sub(birthTime).Hours())
 	p.LastSaved = now
 
 	// Add status change tracking
