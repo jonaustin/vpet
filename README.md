@@ -18,17 +18,16 @@ A Tamagotchi-style virtual pet that lives in your terminal with tmux integration
 - **Energy**: Recovers while sleeping, drains when playing
 - **Age**: Tracks lifespan in hours
 
-💊 **Care System**  
+💊 **Care System**
 - Feed (🍗 +30% Hunger)
-- Medicine (💊 Cure sickness +30% Health) 
+- Medicine (💊 Cure sickness +30% Health)
 - Play (🎾 +30% Happiness)
-- Discipline (🪄 Prevent bad behavior)
 - Sleep (😴 Energy recovery)
 
 ## Tmux Integration
 
-Displays one of these statuses:  
-😸 Happy | 🙀 Hungry | 😾 Tired | 😿 Sad | 😴 Sleeping | 💀 Dead
+Displays one of these statuses (prioritizes lowest stat):
+😸 Happy | 🙀 Hungry | 😾 Tired | 😿 Sad | 🤢 Sick | 😴 Sleeping | 💀 Dead
 
 ## Installation
 

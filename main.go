@@ -45,8 +45,8 @@ const (
 	feedHungerIncrease    = 30
 	feedHappinessIncrease = 10
 	playHappinessIncrease = 30
-	playEnergyDecrease    = 20
-	playHungerDecrease    = 10
+	playEnergyDecrease    = 10
+	playHungerDecrease    = 5
 )
 
 // Pet represents the virtual pet's state
@@ -90,13 +90,6 @@ func (m *model) administerMedicine() {
 	})
 }
 
-func (m *model) discipline() {
-	m.modifyStats(func(p *Pet) {
-		p.Happiness = max(p.Happiness-10, minStat)
-		p.Hunger = max(p.Hunger-5, minStat)
-		log.Printf("Disciplined pet. Happiness is now %d, Hunger is now %d", p.Happiness, p.Hunger)
-	})
-}
 func (m *model) feed() {
 	m.modifyStats(func(p *Pet) {
 		p.Sleeping = false
@@ -146,9 +139,6 @@ func (m *model) updateHourlyStats(t time.Time) {
 			// Sleeping recovers energy faster
 			if int(t.Minute()) == 0 {
 				p.Energy = min(p.Energy+energyRecoveryRate, maxStat)
-				if p.Energy >= maxStat {
-					p.Sleeping = false
-				}
 				log.Printf("Energy increased to %d", p.Energy)
 			}
 		}
@@ -360,9 +350,6 @@ func loadState() Pet {
 		// Energy recovers while sleeping
 		energyGain := (totalMinutes / 60) * energyRecoveryRate
 		pet.Energy = min(pet.Energy+energyGain, maxStat)
-		if pet.Energy >= maxStat {
-			pet.Sleeping = false
-		}
 	}
 
 	// Update happiness if stats are low
@@ -501,7 +488,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.choice--
 			}
 		case "down", "j":
-			if m.choice < 5 {
+			if m.choice < 4 {
 				m.choice++
 			}
 		case "enter", " ":
@@ -517,9 +504,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.toggleSleep()
 			case 3: // Medicine
 				m.administerMedicine()
-			case 4: // Discipline
-				m.discipline()
-			case 5: // Quit
+			case 4: // Quit
 				m.quitting = true
 				return m, tea.Quit
 			}
@@ -596,7 +581,7 @@ func (m model) renderStatus() string {
 }
 
 func (m model) renderMenu() string {
-	choices := []string{"Feed", "Play", "Sleep", "Medicine", "Discipline", "Quit"}
+	choices := []string{"Feed", "Play", "Sleep", "Medicine", "Quit"}
 	var menuItems []string
 
 	for i, choice := range choices {
@@ -626,18 +611,34 @@ func getStatus(p Pet) string {
 	if p.Dead {
 		return "💀 Dead"
 	}
+
+	// Find the lowest stat to prioritize critical issues
+	lowestStat := p.Health
+	lowestStatus := "🤢 Sick"
+
+	if p.Energy < lowestStat {
+		lowestStat = p.Energy
+		lowestStatus = "😾 Tired"
+	}
+	if p.Hunger < lowestStat {
+		lowestStat = p.Hunger
+		lowestStatus = "🙀 Hungry"
+	}
+	if p.Happiness < lowestStat {
+		lowestStat = p.Happiness
+		lowestStatus = "😿 Sad"
+	}
+
+	// Show critical issues even when sleeping
+	if lowestStat < 30 {
+		return lowestStatus
+	}
+
+	// Only show sleeping if no critical issues
 	if p.Sleeping {
 		return "😴 Sleeping"
 	}
-	if p.Energy < 30 {
-		return "😾 Tired"
-	}
-	if p.Hunger < 30 {
-		return "🙀 Hungry"
-	}
-	if p.Happiness < 30 {
-		return "😿 Sad"
-	}
+
 	return "😸 Happy"
 }
 

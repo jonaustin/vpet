@@ -73,6 +73,277 @@ func TestDeathConditions(t *testing.T) {
 	}
 }
 
+func TestNaturalDeathFromOldAge(t *testing.T) {
+	cleanup := setupTestFile(t)
+	defer cleanup()
+
+	// Save original randFloat64 and restore after test
+	originalRandFloat64 := randFloat64
+	defer func() { randFloat64 = originalRandFloat64 }()
+
+	// Create a healthy but old pet (168+ hours)
+	currentTime := time.Now().UTC()
+	birthTime := currentTime.Add(-200 * time.Hour)
+
+	testCfg := &TestConfig{
+		InitialHunger:    100,
+		InitialHappiness: 100,
+		InitialEnergy:    100,
+		Health:           100,
+		LastSavedTime:    birthTime,
+	}
+	pet := newPet(testCfg)
+	saveState(&pet)
+
+	// Fix LastSaved time in file to make pet 200 hours old
+	data, err := os.ReadFile(testConfigPath)
+	if err != nil {
+		t.Fatalf("Failed to read test file: %v", err)
+	}
+	var savedPet Pet
+	if err := json.Unmarshal(data, &savedPet); err != nil {
+		t.Fatalf("Failed to parse test file: %v", err)
+	}
+	savedPet.LastSaved = birthTime
+	data, err = json.MarshalIndent(savedPet, "", "  ")
+	if err != nil {
+		t.Fatalf("Failed to marshal pet: %v", err)
+	}
+	if err := os.WriteFile(testConfigPath, data, 0644); err != nil {
+		t.Fatalf("Failed to write test file: %v", err)
+	}
+
+	// Test old age death triggers
+	randFloat64 = func() float64 { return 0.0 } // Always trigger death
+	loadedPet := loadState()
+
+	if !loadedPet.Dead {
+		t.Error("Expected old pet (200h) to die of old age")
+	}
+	if loadedPet.CauseOfDeath != "Old Age" {
+		t.Errorf("Expected death cause 'Old Age', got '%s'", loadedPet.CauseOfDeath)
+	}
+
+	// Test old age death doesn't trigger with high random value
+	cleanup() // Reset test file
+	cleanup = setupTestFile(t)
+
+	pet = newPet(testCfg)
+	saveState(&pet)
+
+	// Fix LastSaved time again
+	data, _ = os.ReadFile(testConfigPath)
+	json.Unmarshal(data, &savedPet)
+	savedPet.LastSaved = birthTime
+	data, _ = json.MarshalIndent(savedPet, "", "  ")
+	os.WriteFile(testConfigPath, data, 0644)
+
+	randFloat64 = func() float64 { return 1.0 } // Never trigger death
+	loadedPet = loadState()
+
+	if loadedPet.Dead {
+		t.Error("Expected old pet not to die when random value is high")
+	}
+}
+
+func TestDeathCausePriority(t *testing.T) {
+	cleanup := setupTestFile(t)
+	defer cleanup()
+
+	currentTime := time.Now().UTC()
+	criticalStart := currentTime.Add(-13 * time.Hour)
+
+	t.Run("Starvation takes priority over Sickness", func(t *testing.T) {
+		testCfg := &TestConfig{
+			InitialHunger:    0, // Starving
+			InitialHappiness: 50,
+			InitialEnergy:    50,
+			Health:           20,
+			Illness:          true, // Also sick
+			LastSavedTime:    criticalStart,
+		}
+		pet := newPet(testCfg)
+		pet.CriticalStartTime = &criticalStart
+		saveState(&pet)
+
+		// Fix LastSaved time in file
+		data, err := os.ReadFile(testConfigPath)
+		if err != nil {
+			t.Fatalf("Failed to read test file: %v", err)
+		}
+		var savedPet Pet
+		if err := json.Unmarshal(data, &savedPet); err != nil {
+			t.Fatalf("Failed to parse test file: %v", err)
+		}
+		savedPet.LastSaved = criticalStart
+		data, err = json.MarshalIndent(savedPet, "", "  ")
+		if err != nil {
+			t.Fatalf("Failed to marshal pet: %v", err)
+		}
+		if err := os.WriteFile(testConfigPath, data, 0644); err != nil {
+			t.Fatalf("Failed to write test file: %v", err)
+		}
+
+		loadedPet := loadState()
+
+		if !loadedPet.Dead {
+			t.Error("Expected pet to be dead")
+		}
+		if loadedPet.CauseOfDeath != "Starvation" {
+			t.Errorf("Expected 'Starvation' (not 'Sickness'), got '%s'", loadedPet.CauseOfDeath)
+		}
+	})
+
+	t.Run("Sickness when not starving", func(t *testing.T) {
+		cleanup() // Reset
+		cleanup = setupTestFile(t)
+
+		testCfg := &TestConfig{
+			InitialHunger:    70, // High enough to not hit 0 after 13h (13*5=65 decrease)
+			InitialHappiness: 5,
+			InitialEnergy:    5,
+			Health:           5,
+			Illness:          true,
+			LastSavedTime:    criticalStart,
+		}
+		pet := newPet(testCfg)
+		pet.CriticalStartTime = &criticalStart
+		saveState(&pet)
+
+		// Fix LastSaved time in file
+		data, _ := os.ReadFile(testConfigPath)
+		var savedPet Pet
+		json.Unmarshal(data, &savedPet)
+		savedPet.LastSaved = criticalStart
+		data, _ = json.MarshalIndent(savedPet, "", "  ")
+		os.WriteFile(testConfigPath, data, 0644)
+
+		loadedPet := loadState()
+
+		if !loadedPet.Dead {
+			t.Error("Expected pet to be dead")
+		}
+		if loadedPet.CauseOfDeath != "Sickness" {
+			t.Errorf("Expected 'Sickness', got '%s'", loadedPet.CauseOfDeath)
+		}
+	})
+
+	t.Run("Neglect when all stats critical", func(t *testing.T) {
+		cleanup() // Reset
+		cleanup = setupTestFile(t)
+
+		testCfg := &TestConfig{
+			InitialHunger:    70, // High enough to not hit 0 (13*5=65 decrease)
+			InitialHappiness: 5,
+			InitialEnergy:    50, // High enough to not hit 0 (13/2=6.5 decreases * 5 = 32.5)
+			Health:           5,
+			Illness:          false, // Not sick
+			LastSavedTime:    criticalStart,
+		}
+		pet := newPet(testCfg)
+		pet.CriticalStartTime = &criticalStart
+		saveState(&pet)
+
+		// Fix LastSaved time in file
+		data, _ := os.ReadFile(testConfigPath)
+		var savedPet Pet
+		json.Unmarshal(data, &savedPet)
+		savedPet.LastSaved = criticalStart
+		data, _ = json.MarshalIndent(savedPet, "", "  ")
+		os.WriteFile(testConfigPath, data, 0644)
+
+		loadedPet := loadState()
+
+		if !loadedPet.Dead {
+			t.Error("Expected pet to be dead")
+		}
+		if loadedPet.CauseOfDeath != "Neglect" {
+			t.Errorf("Expected 'Neglect', got '%s'", loadedPet.CauseOfDeath)
+		}
+	})
+}
+
+func TestCriticalStateRecovery(t *testing.T) {
+	cleanup := setupTestFile(t)
+	defer cleanup()
+
+	// Save current time.Now and restore after test
+	originalTimeNow := timeNow
+	defer func() { timeNow = originalTimeNow }()
+
+	currentTime := time.Now().UTC()
+	timeNow = func() time.Time { return currentTime }
+
+	// Create pet NOT in critical state initially
+	// We'll manually set CriticalStartTime to simulate it was in critical state before
+	twoHoursAgo := currentTime.Add(-2 * time.Hour)
+	testCfg := &TestConfig{
+		InitialHunger:    50,  // Above critical
+		InitialHappiness: 50,  // Above critical
+		InitialEnergy:    50,  // Above critical
+		Health:           50,  // Above critical
+		LastSavedTime:    twoHoursAgo,
+	}
+
+	pet := newPet(testCfg)
+	// Manually set critical start time to simulate pet WAS in critical state
+	oneHourAgo := currentTime.Add(-1 * time.Hour)
+	pet.CriticalStartTime = &oneHourAgo
+	saveState(&pet)
+
+	// Fix LastSaved time in file
+	data, err := os.ReadFile(testConfigPath)
+	if err != nil {
+		t.Fatalf("Failed to read test file: %v", err)
+	}
+	var savedPet Pet
+	if err := json.Unmarshal(data, &savedPet); err != nil {
+		t.Fatalf("Failed to parse test file: %v", err)
+	}
+	savedPet.LastSaved = twoHoursAgo
+	data, err = json.MarshalIndent(savedPet, "", "  ")
+	if err != nil {
+		t.Fatalf("Failed to marshal pet: %v", err)
+	}
+	if err := os.WriteFile(testConfigPath, data, 0644); err != nil {
+		t.Fatalf("Failed to write test file: %v", err)
+	}
+
+	// Verify pet has CriticalStartTime set
+	if pet.CriticalStartTime == nil {
+		t.Error("Pet should have CriticalStartTime set for test")
+	}
+
+	// Load state - pet should recover from critical state
+	// After 2 hours: Hunger=50-10=40, Happiness=50, Energy=50-5=45, Health=50
+	// All above thresholds: Health>20, Hunger>=10, Happiness>=10, Energy>=10
+	loadedPet := loadState()
+
+	// Verify CriticalStartTime has been reset
+	if loadedPet.CriticalStartTime != nil {
+		t.Errorf("CriticalStartTime should be nil after recovery from critical state, got %v", loadedPet.CriticalStartTime)
+	}
+
+	// Verify pet is not dead
+	if loadedPet.Dead {
+		t.Error("Pet should not be dead after recovery")
+	}
+
+	// Verify all stats are above critical thresholds
+	if loadedPet.Health <= 20 {
+		t.Errorf("Health should be > 20, got %d", loadedPet.Health)
+	}
+	if loadedPet.Hunger < 10 {
+		t.Errorf("Hunger should be >= 10, got %d", loadedPet.Hunger)
+	}
+	if loadedPet.Happiness < 10 {
+		t.Errorf("Happiness should be >= 10, got %d", loadedPet.Happiness)
+	}
+	if loadedPet.Energy < 10 {
+		t.Errorf("Energy should be >= 10, got %d", loadedPet.Energy)
+	}
+}
+
 func TestNewPet(t *testing.T) {
 	cleanup := setupTestFile(t)
 	defer cleanup()
@@ -203,7 +474,7 @@ func TestStatBoundaries(t *testing.T) {
 	}
 }
 
-func TestTimeBasedUpdates(t *testing.T) {
+func TestSleepingPetStaysAsleepAtFullEnergy(t *testing.T) {
 	cleanup := setupTestFile(t)
 	defer cleanup()
 
@@ -214,6 +485,70 @@ func TestTimeBasedUpdates(t *testing.T) {
 	// Set current time
 	currentTime := time.Now().UTC()
 	timeNow = func() time.Time { return currentTime }
+
+	// Create sleeping pet with low energy
+	oneHourAgo := currentTime.Add(-1 * time.Hour)
+	testCfg := &TestConfig{
+		InitialHunger:    100,
+		InitialHappiness: 100,
+		InitialEnergy:    90, // Below max
+		Health:           100,
+		IsSleeping:       true,
+		LastSavedTime:    oneHourAgo,
+	}
+
+	pet := newPet(testCfg)
+	saveState(&pet)
+
+	// Fix LastSaved time in file
+	data, err := os.ReadFile(testConfigPath)
+	if err != nil {
+		t.Fatalf("Failed to read test file: %v", err)
+	}
+	var savedPet Pet
+	if err := json.Unmarshal(data, &savedPet); err != nil {
+		t.Fatalf("Failed to parse test file: %v", err)
+	}
+	savedPet.LastSaved = oneHourAgo
+	data, err = json.MarshalIndent(savedPet, "", "  ")
+	if err != nil {
+		t.Fatalf("Failed to marshal pet: %v", err)
+	}
+	if err := os.WriteFile(testConfigPath, data, 0644); err != nil {
+		t.Fatalf("Failed to write test file: %v", err)
+	}
+
+	// Load state - after 1 hour of sleeping, energy should be 100
+	loadedPet := loadState()
+
+	if loadedPet.Energy != 100 {
+		t.Errorf("Expected energy to be 100 after 1 hour of sleep, got %d", loadedPet.Energy)
+	}
+
+	// Critical test: Pet should STAY ASLEEP even though energy is at max
+	if !loadedPet.Sleeping {
+		t.Error("Pet should stay asleep even at full energy (no auto-wake)")
+	}
+}
+
+func TestTimeBasedUpdates(t *testing.T) {
+	cleanup := setupTestFile(t)
+	defer cleanup()
+
+	// Save current time.Now and restore after test
+	originalTimeNow := timeNow
+	defer func() { timeNow = originalTimeNow }()
+
+	// Save original randFloat64 and restore after test
+	originalRandFloat64 := randFloat64
+	defer func() { randFloat64 = originalRandFloat64 }()
+
+	// Set current time
+	currentTime := time.Now().UTC()
+	timeNow = func() time.Time { return currentTime }
+
+	// Prevent random illness from making test non-deterministic
+	randFloat64 = func() float64 { return 1.0 }
 
 	// Create initial pet state from 2 hours ago
 	twoHoursAgo := currentTime.Add(-2 * time.Hour)
@@ -413,15 +748,17 @@ func TestStatusLogging(t *testing.T) {
 		pet := newPet(nil)
 		initialStatus := pet.LastStatus
 
-		// First change: Make pet hungry
+		// First change: Make pet hungry (lowest stat)
 		pet.Hunger = 20
 		saveState(&pet)
 
-		// Second change: Make pet tired
-		pet.Energy = 20
+		// Second change: Make pet more tired than hungry (new lowest stat)
+		pet.Energy = 15
 		saveState(&pet)
 
-		// Third change: Make pet sleep
+		// Third change: Restore stats and make pet sleep
+		pet.Hunger = 50
+		pet.Energy = 50
 		pet.Sleeping = true
 		saveState(&pet)
 
@@ -435,9 +772,9 @@ func TestStatusLogging(t *testing.T) {
 			new string
 		}{
 			{"", initialStatus},         // Initial status
-			{initialStatus, "🙀 Hungry"},  //First change
-			{"🙀 Hungry", "😾 Tired"},     // Second change
-			{"😾 Tired", "😴 Sleeping"},   // Third change
+			{initialStatus, "🙀 Hungry"},  // First change: hunger is lowest
+			{"🙀 Hungry", "😾 Tired"},     // Second change: energy becomes lowest
+			{"😾 Tired", "😴 Sleeping"},   // Third change: no critical stats, sleeping
 		}
 
 		for i, expected := range expectedStatuses {
