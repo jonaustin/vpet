@@ -70,9 +70,10 @@ type Pet struct {
 
 // model represents the game state
 type model struct {
-	pet      Pet
-	choice   int
-	quitting bool
+	pet                Pet
+	choice             int
+	quitting           bool
+	showingAdoptPrompt bool
 }
 
 // Helper function to modify stats and save immediately
@@ -459,8 +460,9 @@ func initialModel(testCfg *TestConfig) model {
 		pet = loadState()
 	}
 	return model{
-		pet:    pet,
-		choice: 0,
+		pet:                pet,
+		choice:             0,
+		showingAdoptPrompt: pet.Dead, // Show adoption prompt if pet is already dead
 	}
 }
 
@@ -483,6 +485,22 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "ctrl+c", "q":
 			m.quitting = true
 			return m, tea.Quit
+		case "y":
+			// Handle adoption prompt
+			if m.pet.Dead && m.showingAdoptPrompt {
+				// Create new pet
+				m.pet = newPet(nil)
+				m.showingAdoptPrompt = false
+				m.choice = 0
+				saveState(&m.pet)
+				return m, nil
+			}
+		case "n":
+			// Handle adoption prompt rejection
+			if m.pet.Dead && m.showingAdoptPrompt {
+				m.showingAdoptPrompt = false
+				return m, nil
+			}
 		case "up", "k":
 			if m.choice > 0 {
 				m.choice--
@@ -512,6 +530,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tickMsg:
 		m.updateHourlyStats(time.Time(msg))
+		// If pet just died, show adoption prompt
+		if m.pet.Dead && !m.showingAdoptPrompt {
+			m.showingAdoptPrompt = true
+		}
 		return m, tick()
 	}
 
@@ -596,6 +618,20 @@ func (m model) renderMenu() string {
 }
 
 func (m model) deadView() string {
+	if m.showingAdoptPrompt {
+		return lipgloss.JoinVertical(
+			lipgloss.Center,
+			gameStyles.title.Render("💀 "+m.pet.Name+" 💀"),
+			"",
+			gameStyles.status.Render("Your pet has passed away..."),
+			gameStyles.status.Render("Cause of death: "+m.pet.CauseOfDeath),
+			gameStyles.status.Render("They lived for "+fmt.Sprintf("%d hours", m.pet.Age)),
+			"",
+			gameStyles.menuBox.Render("Would you like to adopt a new pet?"),
+			"",
+			gameStyles.status.Render("Press 'y' for yes, 'n' for no"),
+		)
+	}
 	return lipgloss.JoinVertical(
 		lipgloss.Center,
 		gameStyles.title.Render("💀 "+m.pet.Name+" 💀"),
