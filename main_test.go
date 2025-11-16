@@ -995,3 +995,362 @@ func TestDeathLogging(t *testing.T) {
 		t.Errorf("Last log entry should be death status, got '%s'", lastLog.NewStatus)
 	}
 }
+
+func TestEvolution(t *testing.T) {
+	cleanup := setupTestFile(t)
+	defer cleanup()
+
+	// Save current time.Now and restore after test
+	originalTimeNow := timeNow
+	defer func() { timeNow = originalTimeNow }()
+
+	currentTime := time.Now().UTC()
+	timeNow = func() time.Time { return currentTime }
+
+	t.Run("Baby to Healthy Child with good care", func(t *testing.T) {
+		birthTime := currentTime.Add(-50 * time.Hour) // Just past child threshold
+
+		testCfg := &TestConfig{
+			InitialHunger:    90, // Good care
+			InitialHappiness: 90,
+			InitialEnergy:    90,
+			Health:           90,
+			LastSavedTime:    birthTime,
+		}
+		pet := newPet(testCfg)
+		saveState(&pet)
+
+		// Fix LastSaved time in file
+		data, _ := os.ReadFile(testConfigPath)
+		var savedPet Pet
+		json.Unmarshal(data, &savedPet)
+		savedPet.LastSaved = birthTime
+		data, _ = json.MarshalIndent(savedPet, "", "  ")
+		os.WriteFile(testConfigPath, data, 0644)
+
+		loadedPet := loadState()
+
+		if loadedPet.LifeStage != 1 {
+			t.Errorf("Expected Child stage (1), got %d", loadedPet.LifeStage)
+		}
+		if loadedPet.Form != FormHealthyChild {
+			t.Errorf("Expected Healthy Child form, got %s", loadedPet.getFormName())
+		}
+	})
+
+	t.Run("Baby to Troubled Child with poor care", func(t *testing.T) {
+		cleanup()
+		cleanup = setupTestFile(t)
+
+		birthTime := currentTime.Add(-50 * time.Hour)
+
+		testCfg := &TestConfig{
+			InitialHunger:    50, // Poor care (50-69% is poor)
+			InitialHappiness: 50,
+			InitialEnergy:    50,
+			Health:           50,
+			LastSavedTime:    birthTime,
+		}
+		pet := newPet(testCfg)
+
+		// Manually add checkpoints to simulate poor care during baby stage
+		for i := 0; i < 48; i++ { // 48 hours of baby stage
+			pet.StatCheckpoints["stage_0"] = append(pet.StatCheckpoints["stage_0"], StatCheck{
+				Time:      birthTime.Add(time.Duration(i) * time.Hour),
+				Hunger:    50,
+				Happiness: 50,
+				Energy:    50,
+				Health:    50,
+			})
+		}
+
+		saveState(&pet)
+
+		data, _ := os.ReadFile(testConfigPath)
+		var savedPet Pet
+		json.Unmarshal(data, &savedPet)
+		savedPet.LastSaved = birthTime
+		data, _ = json.MarshalIndent(savedPet, "", "  ")
+		os.WriteFile(testConfigPath, data, 0644)
+
+		loadedPet := loadState()
+
+		if loadedPet.Form != FormTroubledChild {
+			t.Errorf("Expected Troubled Child form, got %s", loadedPet.getFormName())
+		}
+	})
+
+	t.Run("Healthy Child to Elite Adult with perfect care", func(t *testing.T) {
+		cleanup()
+		cleanup = setupTestFile(t)
+
+		birthTime := currentTime.Add(-100 * time.Hour) // Past adult threshold
+
+		testCfg := &TestConfig{
+			InitialHunger:    95, // Perfect care
+			InitialHappiness: 95,
+			InitialEnergy:    95,
+			Health:           95,
+			LastSavedTime:    birthTime,
+		}
+		pet := newPet(testCfg)
+		// Manually set to Healthy Child as if it evolved from baby
+		pet.Form = FormHealthyChild
+		pet.LifeStage = 1 // Set to child stage
+		saveState(&pet)
+
+		data, _ := os.ReadFile(testConfigPath)
+		var savedPet Pet
+		json.Unmarshal(data, &savedPet)
+		savedPet.LastSaved = birthTime
+		data, _ = json.MarshalIndent(savedPet, "", "  ")
+		os.WriteFile(testConfigPath, data, 0644)
+
+		loadedPet := loadState()
+
+		if loadedPet.LifeStage != 2 {
+			t.Errorf("Expected Adult stage (2), got %d", loadedPet.LifeStage)
+		}
+		if loadedPet.Form != FormEliteAdult {
+			t.Errorf("Expected Elite Adult form, got %s", loadedPet.getFormName())
+		}
+	})
+
+	t.Run("Baby to Sickly Child with neglect", func(t *testing.T) {
+		cleanup()
+		cleanup = setupTestFile(t)
+
+		birthTime := currentTime.Add(-50 * time.Hour)
+
+		testCfg := &TestConfig{
+			InitialHunger:    15, // Neglect care (<20%)
+			InitialHappiness: 15,
+			InitialEnergy:    15,
+			Health:           15,
+			LastSavedTime:    birthTime,
+		}
+		pet := newPet(testCfg)
+
+		// Manually add checkpoints to simulate neglect during baby stage
+		for i := 0; i < 48; i++ {
+			pet.StatCheckpoints["stage_0"] = append(pet.StatCheckpoints["stage_0"], StatCheck{
+				Time:      birthTime.Add(time.Duration(i) * time.Hour),
+				Hunger:    15,
+				Happiness: 15,
+				Energy:    15,
+				Health:    15,
+			})
+		}
+
+		saveState(&pet)
+
+		data, _ := os.ReadFile(testConfigPath)
+		var savedPet Pet
+		json.Unmarshal(data, &savedPet)
+		savedPet.LastSaved = birthTime
+		data, _ = json.MarshalIndent(savedPet, "", "  ")
+		os.WriteFile(testConfigPath, data, 0644)
+
+		loadedPet := loadState()
+
+		if loadedPet.Form != FormSicklyChild {
+			t.Errorf("Expected Sickly Child form, got %s", loadedPet.getFormName())
+		}
+	})
+
+	t.Run("Healthy Child to Standard Adult with good care", func(t *testing.T) {
+		cleanup()
+		cleanup = setupTestFile(t)
+
+		birthTime := currentTime.Add(-100 * time.Hour)
+
+		testCfg := &TestConfig{
+			InitialHunger:    75, // Good care (70-84%)
+			InitialHappiness: 75,
+			InitialEnergy:    75,
+			Health:           75,
+			LastSavedTime:    birthTime,
+		}
+		pet := newPet(testCfg)
+		pet.Form = FormHealthyChild
+		pet.LifeStage = 1
+
+		// Manually add checkpoints to simulate good care during child stage
+		for i := 0; i < 48; i++ {
+			pet.StatCheckpoints["stage_1"] = append(pet.StatCheckpoints["stage_1"], StatCheck{
+				Time:      birthTime.Add(time.Duration(i) * time.Hour),
+				Hunger:    75,
+				Happiness: 75,
+				Energy:    75,
+				Health:    75,
+			})
+		}
+
+		saveState(&pet)
+
+		data, _ := os.ReadFile(testConfigPath)
+		var savedPet Pet
+		json.Unmarshal(data, &savedPet)
+		savedPet.LastSaved = birthTime
+		data, _ = json.MarshalIndent(savedPet, "", "  ")
+		os.WriteFile(testConfigPath, data, 0644)
+
+		loadedPet := loadState()
+
+		if loadedPet.Form != FormStandardAdult {
+			t.Errorf("Expected Standard Adult form, got %s", loadedPet.getFormName())
+		}
+	})
+
+	t.Run("Healthy Child to Grumpy Adult with poor care", func(t *testing.T) {
+		cleanup()
+		cleanup = setupTestFile(t)
+
+		birthTime := currentTime.Add(-100 * time.Hour)
+
+		testCfg := &TestConfig{
+			InitialHunger:    45, // Poor care
+			InitialHappiness: 45,
+			InitialEnergy:    45,
+			Health:           45,
+			LastSavedTime:    birthTime,
+		}
+		pet := newPet(testCfg)
+		pet.Form = FormHealthyChild
+		pet.LifeStage = 1
+
+		// Manually add checkpoints to simulate poor care during child stage
+		for i := 0; i < 48; i++ {
+			pet.StatCheckpoints["stage_1"] = append(pet.StatCheckpoints["stage_1"], StatCheck{
+				Time:      birthTime.Add(time.Duration(i) * time.Hour),
+				Hunger:    45,
+				Happiness: 45,
+				Energy:    45,
+				Health:    45,
+			})
+		}
+
+		saveState(&pet)
+
+		data, _ := os.ReadFile(testConfigPath)
+		var savedPet Pet
+		json.Unmarshal(data, &savedPet)
+		savedPet.LastSaved = birthTime
+		data, _ = json.MarshalIndent(savedPet, "", "  ")
+		os.WriteFile(testConfigPath, data, 0644)
+
+		loadedPet := loadState()
+
+		if loadedPet.Form != FormGrumpyAdult {
+			t.Errorf("Expected Grumpy Adult form, got %s", loadedPet.getFormName())
+		}
+	})
+
+	t.Run("Troubled Child to Redeemed Adult with improved care", func(t *testing.T) {
+		cleanup()
+		cleanup = setupTestFile(t)
+
+		birthTime := currentTime.Add(-100 * time.Hour)
+
+		testCfg := &TestConfig{
+			InitialHunger:    80, // Improved care
+			InitialHappiness: 80,
+			InitialEnergy:    80,
+			Health:           80,
+			LastSavedTime:    birthTime,
+		}
+		pet := newPet(testCfg)
+		pet.Form = FormTroubledChild
+		pet.LifeStage = 1
+		saveState(&pet)
+
+		data, _ := os.ReadFile(testConfigPath)
+		var savedPet Pet
+		json.Unmarshal(data, &savedPet)
+		savedPet.LastSaved = birthTime
+		data, _ = json.MarshalIndent(savedPet, "", "  ")
+		os.WriteFile(testConfigPath, data, 0644)
+
+		loadedPet := loadState()
+
+		if loadedPet.Form != FormRedeemedAdult {
+			t.Errorf("Expected Redeemed Adult form, got %s", loadedPet.getFormName())
+		}
+	})
+
+	t.Run("Troubled Child to Delinquent Adult with continued neglect", func(t *testing.T) {
+		cleanup()
+		cleanup = setupTestFile(t)
+
+		birthTime := currentTime.Add(-100 * time.Hour)
+
+		testCfg := &TestConfig{
+			InitialHunger:    30, // Continued poor/neglect care
+			InitialHappiness: 30,
+			InitialEnergy:    30,
+			Health:           30,
+			LastSavedTime:    birthTime,
+		}
+		pet := newPet(testCfg)
+		pet.Form = FormTroubledChild
+		pet.LifeStage = 1
+
+		// Manually add checkpoints to simulate continued neglect during child stage
+		for i := 0; i < 48; i++ {
+			pet.StatCheckpoints["stage_1"] = append(pet.StatCheckpoints["stage_1"], StatCheck{
+				Time:      birthTime.Add(time.Duration(i) * time.Hour),
+				Hunger:    30,
+				Happiness: 30,
+				Energy:    30,
+				Health:    30,
+			})
+		}
+
+		saveState(&pet)
+
+		data, _ := os.ReadFile(testConfigPath)
+		var savedPet Pet
+		json.Unmarshal(data, &savedPet)
+		savedPet.LastSaved = birthTime
+		data, _ = json.MarshalIndent(savedPet, "", "  ")
+		os.WriteFile(testConfigPath, data, 0644)
+
+		loadedPet := loadState()
+
+		if loadedPet.Form != FormDelinquentAdult {
+			t.Errorf("Expected Delinquent Adult form, got %s", loadedPet.getFormName())
+		}
+	})
+
+	t.Run("Sickly Child to Weak Adult", func(t *testing.T) {
+		cleanup()
+		cleanup = setupTestFile(t)
+
+		birthTime := currentTime.Add(-100 * time.Hour)
+
+		testCfg := &TestConfig{
+			InitialHunger:    60, // Any care level - sickly always → weak
+			InitialHappiness: 60,
+			InitialEnergy:    60,
+			Health:           60,
+			LastSavedTime:    birthTime,
+		}
+		pet := newPet(testCfg)
+		pet.Form = FormSicklyChild
+		pet.LifeStage = 1
+		saveState(&pet)
+
+		data, _ := os.ReadFile(testConfigPath)
+		var savedPet Pet
+		json.Unmarshal(data, &savedPet)
+		savedPet.LastSaved = birthTime
+		data, _ = json.MarshalIndent(savedPet, "", "  ")
+		os.WriteFile(testConfigPath, data, 0644)
+
+		loadedPet := loadState()
+
+		if loadedPet.Form != FormWeakAdult {
+			t.Errorf("Expected Weak Adult form, got %s", loadedPet.getFormName())
+		}
+	})
+}

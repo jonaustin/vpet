@@ -47,25 +47,69 @@ const (
 	playHappinessIncrease = 30
 	playEnergyDecrease    = 10
 	playHungerDecrease    = 5
+
+	// Care quality thresholds for evolution
+	perfectCareThreshold = 85
+	goodCareThreshold    = 70
+	poorCareThreshold    = 40
+	neglectThreshold     = 20
 )
+
+// Pet forms for evolution system
+const (
+	FormBaby PetForm = iota
+	// Child forms
+	FormHealthyChild
+	FormTroubledChild
+	FormSicklyChild
+	// Adult forms
+	FormEliteAdult
+	FormStandardAdult
+	FormGrumpyAdult
+	FormRedeemedAdult
+	FormDelinquentAdult
+	FormWeakAdult
+)
+
+type PetForm int
+
+// CareQuality tracks average stats during a life stage
+type CareQuality struct {
+	AvgHunger    int `json:"avg_hunger"`
+	AvgHappiness int `json:"avg_happiness"`
+	AvgEnergy    int `json:"avg_energy"`
+	AvgHealth    int `json:"avg_health"`
+}
 
 // Pet represents the virtual pet's state
 type Pet struct {
-	Name              string     `json:"name"`
-	Hunger            int        `json:"hunger"`
-	Happiness         int        `json:"happiness"`
-	Energy            int        `json:"energy"`
-	Health            int        `json:"health"` // New health metric
-	Age               int        `json:"age"`    // In hours
-	LifeStage         int        `json:"stage"`  // 0=baby, 1=child, 2=adult
-	Sleeping          bool       `json:"sleeping"`
-	Dead              bool       `json:"dead"`
-	CauseOfDeath      string     `json:"cause_of_death,omitempty"`
-	LastSaved         time.Time  `json:"last_saved"`
-	CriticalStartTime *time.Time `json:"critical_start_time,omitempty"`
-	Illness           bool       `json:"illness"` // Random sickness flag
-	LastStatus        string     `json:"last_status,omitempty"`
-	Logs              []LogEntry `json:"logs,omitempty"`
+	Name               string                 `json:"name"`
+	Hunger             int                    `json:"hunger"`
+	Happiness          int                    `json:"happiness"`
+	Energy             int                    `json:"energy"`
+	Health             int                    `json:"health"` // New health metric
+	Age                int                    `json:"age"`    // In hours
+	LifeStage          int                    `json:"stage"`  // 0=baby, 1=child, 2=adult
+	Form               PetForm                `json:"form"`   // Current evolution form
+	Sleeping           bool                   `json:"sleeping"`
+	Dead               bool                   `json:"dead"`
+	CauseOfDeath       string                 `json:"cause_of_death,omitempty"`
+	LastSaved          time.Time              `json:"last_saved"`
+	CriticalStartTime  *time.Time             `json:"critical_start_time,omitempty"`
+	Illness            bool                   `json:"illness"` // Random sickness flag
+	LastStatus         string                 `json:"last_status,omitempty"`
+	Logs               []LogEntry             `json:"logs,omitempty"`
+	CareQualityHistory map[int]CareQuality    `json:"care_quality_history,omitempty"` // Tracks care per stage
+	StatCheckpoints    map[string][]StatCheck `json:"stat_checkpoints,omitempty"`     // For calculating averages
+}
+
+// StatCheck records stats at a point in time for averaging
+type StatCheck struct {
+	Time      time.Time `json:"time"`
+	Hunger    int       `json:"hunger"`
+	Happiness int       `json:"happiness"`
+	Energy    int       `json:"energy"`
+	Health    int       `json:"health"`
 }
 
 // model represents the game state
@@ -74,6 +118,162 @@ type model struct {
 	choice             int
 	quitting           bool
 	showingAdoptPrompt bool
+	evolutionMessage   string
+}
+
+// Evolution helper functions
+func (p *Pet) recordStatCheckpoint() {
+	if p.StatCheckpoints == nil {
+		p.StatCheckpoints = make(map[string][]StatCheck)
+	}
+
+	stageKey := fmt.Sprintf("stage_%d", p.LifeStage)
+	checkpoint := StatCheck{
+		Time:      timeNow(),
+		Hunger:    p.Hunger,
+		Happiness: p.Happiness,
+		Energy:    p.Energy,
+		Health:    p.Health,
+	}
+
+	p.StatCheckpoints[stageKey] = append(p.StatCheckpoints[stageKey], checkpoint)
+}
+
+func (p *Pet) calculateCareQuality(stage int) CareQuality {
+	stageKey := fmt.Sprintf("stage_%d", stage)
+	checkpoints := p.StatCheckpoints[stageKey]
+
+	if len(checkpoints) == 0 {
+		// No data, assume perfect care
+		return CareQuality{
+			AvgHunger:    maxStat,
+			AvgHappiness: maxStat,
+			AvgEnergy:    maxStat,
+			AvgHealth:    maxStat,
+		}
+	}
+
+	var totalHunger, totalHappiness, totalEnergy, totalHealth int
+	for _, checkpoint := range checkpoints {
+		totalHunger += checkpoint.Hunger
+		totalHappiness += checkpoint.Happiness
+		totalEnergy += checkpoint.Energy
+		totalHealth += checkpoint.Health
+	}
+
+	count := len(checkpoints)
+	return CareQuality{
+		AvgHunger:    totalHunger / count,
+		AvgHappiness: totalHappiness / count,
+		AvgEnergy:    totalEnergy / count,
+		AvgHealth:    totalHealth / count,
+	}
+}
+
+func (cq CareQuality) overallAverage() int {
+	return (cq.AvgHunger + cq.AvgHappiness + cq.AvgEnergy + cq.AvgHealth) / 4
+}
+
+func (p *Pet) evolve(newStage int) {
+	// Calculate care quality from previous stage
+	prevStage := newStage - 1
+	careQuality := p.calculateCareQuality(prevStage)
+
+	// Store care quality history
+	if p.CareQualityHistory == nil {
+		p.CareQualityHistory = make(map[int]CareQuality)
+	}
+	p.CareQualityHistory[prevStage] = careQuality
+
+	// Determine new form based on stage and care quality
+	avgCare := careQuality.overallAverage()
+
+	switch newStage {
+	case 1: // Evolving to Child
+		if avgCare >= goodCareThreshold {
+			p.Form = FormHealthyChild
+		} else if avgCare >= poorCareThreshold {
+			p.Form = FormTroubledChild
+		} else {
+			p.Form = FormSicklyChild
+		}
+
+	case 2: // Evolving to Adult
+		switch p.Form {
+		case FormHealthyChild:
+			if avgCare >= perfectCareThreshold {
+				p.Form = FormEliteAdult
+			} else if avgCare >= goodCareThreshold {
+				p.Form = FormStandardAdult
+			} else {
+				p.Form = FormGrumpyAdult
+			}
+		case FormTroubledChild:
+			if avgCare >= goodCareThreshold {
+				p.Form = FormRedeemedAdult
+			} else {
+				p.Form = FormDelinquentAdult
+			}
+		case FormSicklyChild:
+			p.Form = FormWeakAdult
+		}
+	}
+
+	log.Printf("Pet evolved to %s (care quality: %d%%)", p.getFormName(), avgCare)
+}
+
+func (p *Pet) getFormName() string {
+	switch p.Form {
+	case FormBaby:
+		return "Baby"
+	case FormHealthyChild:
+		return "Healthy Child"
+	case FormTroubledChild:
+		return "Troubled Child"
+	case FormSicklyChild:
+		return "Sickly Child"
+	case FormEliteAdult:
+		return "Elite Adult"
+	case FormStandardAdult:
+		return "Standard Adult"
+	case FormGrumpyAdult:
+		return "Grumpy Adult"
+	case FormRedeemedAdult:
+		return "Redeemed Adult"
+	case FormDelinquentAdult:
+		return "Delinquent Adult"
+	case FormWeakAdult:
+		return "Weak Adult"
+	default:
+		return "Unknown"
+	}
+}
+
+func (p *Pet) getFormEmoji() string {
+	switch p.Form {
+	case FormBaby:
+		return "🐣"
+	case FormHealthyChild:
+		return "😊"
+	case FormTroubledChild:
+		return "😟"
+	case FormSicklyChild:
+		return "🤒"
+	case FormEliteAdult:
+		return "⭐"
+	case FormStandardAdult:
+		return "😺"
+	case FormGrumpyAdult:
+		return "😼"
+	case FormRedeemedAdult:
+		return "😸"
+	case FormDelinquentAdult:
+		return "😾"
+	case FormWeakAdult:
+		return "🤕"
+	default:
+		return "❓"
+	}
 }
 
 // Helper function to modify stats and save immediately
@@ -120,6 +320,11 @@ func (m *model) toggleSleep() {
 
 func (m *model) updateHourlyStats(t time.Time) {
 	m.modifyStats(func(p *Pet) {
+		// Record stat checkpoint every hour for evolution tracking
+		if int(t.Minute()) == 0 {
+			p.recordStatCheckpoint()
+		}
+
 		// Hunger decreases every hour (reduced rate while sleeping)
 		if int(t.Minute()) == 0 {
 			hungerRate := hungerDecreaseRate
@@ -240,10 +445,22 @@ func newPet(testCfg *TestConfig) Pet {
 			Health:    maxStat,
 			Age:       0,
 			LifeStage: 0,
+			Form:      FormBaby,
 			Sleeping:  false,
 			LastSaved: now,
 			Illness:   false,
 		}
+	}
+
+	// Initialize evolution tracking maps
+	if pet.Form == 0 {
+		pet.Form = FormBaby // Ensure form is set for existing pets
+	}
+	if pet.CareQualityHistory == nil {
+		pet.CareQualityHistory = make(map[int]CareQuality)
+	}
+	if pet.StatCheckpoints == nil {
+		pet.StatCheckpoints = make(map[string][]StatCheck)
 	}
 
 	pet.LastStatus = getStatus(pet)
@@ -321,13 +538,19 @@ func loadState() Pet {
 	birthTime := pet.Logs[0].Time
 	pet.Age = int(now.Sub(birthTime).Hours())
 
-	// Calculate life stage based on age
+	// Calculate life stage based on age and handle evolution
+	oldLifeStage := pet.LifeStage
 	if pet.Age < ageStageThresholds {
 		pet.LifeStage = 0 // Baby
 	} else if pet.Age < 2*ageStageThresholds {
 		pet.LifeStage = 1 // Child
 	} else {
 		pet.LifeStage = 2 // Adult
+	}
+
+	// Handle evolution when life stage changes
+	if oldLifeStage != pet.LifeStage && pet.LifeStage > 0 {
+		pet.evolve(pet.LifeStage)
 	}
 
 	// Check death condition first
@@ -549,7 +772,8 @@ func (m model) View() string {
 	}
 
 	// Build the view from components
-	title := gameStyles.title.Render("😺 " + m.pet.Name + " 😺")
+	formEmoji := m.pet.getFormEmoji()
+	title := gameStyles.title.Render(formEmoji + " " + m.pet.Name + " " + formEmoji)
 	stats := m.renderStats()
 	status := m.renderStatus()
 	menu := m.renderMenu()
@@ -570,24 +794,16 @@ func (m model) View() string {
 }
 
 func (m model) renderStats() string {
-	lifeStage := "Baby"
-	switch m.pet.LifeStage {
-	case 1:
-		lifeStage = "Child"
-	case 2:
-		lifeStage = "Adult"
-	}
-
 	stats := []struct {
 		name, value string
 	}{
+		{"Form", m.pet.getFormName()},
 		{"Hunger", fmt.Sprintf("%d%%", m.pet.Hunger)},
 		{"Happiness", fmt.Sprintf("%d%%", m.pet.Happiness)},
 		{"Energy", fmt.Sprintf("%d%%", m.pet.Energy)},
 		{"Health", fmt.Sprintf("%d%%", m.pet.Health)},
 		{"Age", fmt.Sprintf("%dh", m.pet.Age)},
 		{"Illness", map[bool]string{true: "Yes", false: "No"}[m.pet.Illness]},
-		{"Life Stage", lifeStage},
 	}
 
 	var lines []string
