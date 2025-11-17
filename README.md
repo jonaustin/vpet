@@ -29,6 +29,8 @@ A Tamagotchi-style virtual pet that lives in your terminal with tmux integration
 Displays one of these statuses (prioritizes lowest stat):
 😸 Happy | 🙀 Hungry | 😾 Tired | 😿 Sad | 🤢 Sick | 😴 Sleeping | 💀 Dead
 
+**Hotkey:** Press `Prefix + P` to view detailed stats in a popup window
+
 ## Installation
 
 ```bash
@@ -56,6 +58,9 @@ vpet -u
 
 # Check current status
 vpet -status
+
+# Display detailed stats
+vpet -stats
 ```
 
 ## Stat System

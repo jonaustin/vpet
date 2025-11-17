@@ -894,6 +894,46 @@ func getStatus(p Pet) string {
 	return "😸 Happy"
 }
 
+func displayStats(pet Pet) {
+	// Helper function to create progress bar
+	makeBar := func(value int) string {
+		filled := value / 20 // 5 blocks for 100%
+		bar := ""
+		for i := 0; i < 5; i++ {
+			if i < filled {
+				bar += "█"
+			} else {
+				bar += "░"
+			}
+		}
+		return bar
+	}
+
+	formEmoji := pet.getFormEmoji()
+	formName := pet.getFormName()
+	status := getStatus(pet)
+	illnessStatus := "No"
+	if pet.Illness {
+		illnessStatus = "Yes"
+	}
+
+	// Display formatted stats box
+	fmt.Println("╔════════════════════════════════════╗")
+	fmt.Printf("║  %s %s %s                  ║\n", formEmoji, pet.Name, formEmoji)
+	fmt.Println("╠════════════════════════════════════╣")
+	fmt.Printf("║  Form:    %-24s ║\n", formName)
+	fmt.Printf("║  Age:     %-24s ║\n", fmt.Sprintf("%d hours", pet.Age))
+	fmt.Printf("║  Status:  %-24s ║\n", status)
+	fmt.Println("║                                    ║")
+	fmt.Printf("║  Hunger:    [%s] %3d%%           ║\n", makeBar(pet.Hunger), pet.Hunger)
+	fmt.Printf("║  Happiness: [%s] %3d%%           ║\n", makeBar(pet.Happiness), pet.Happiness)
+	fmt.Printf("║  Energy:    [%s] %3d%%           ║\n", makeBar(pet.Energy), pet.Energy)
+	fmt.Printf("║  Health:    [%s] %3d%%           ║\n", makeBar(pet.Health), pet.Health)
+	fmt.Println("║                                    ║")
+	fmt.Printf("║  Illness:   %-23s║\n", illnessStatus)
+	fmt.Println("╚════════════════════════════════════╝")
+}
+
 func min(a, b int) int {
 	if a < b {
 		return a
@@ -921,7 +961,14 @@ func main() {
 
 	updateOnly := flag.Bool("u", false, "Update pet stats only, don't run UI")
 	statusFlag := flag.Bool("status", false, "Output current status emoji")
+	statsFlag := flag.Bool("stats", false, "Display detailed pet statistics")
 	flag.Parse()
+
+	if *statsFlag {
+		pet := loadState()
+		displayStats(pet)
+		return
+	}
 
 	if *statusFlag {
 		pet := loadState()
