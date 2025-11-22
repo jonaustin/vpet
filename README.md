@@ -139,6 +139,7 @@ Press `c` to access the cheat menu (for testing/debugging):
 - Max/Min all stats
 - Set mood
 - Toggle illness/sleep
+- Cycle chronotype
 - Advance age
 - Kill pet
 
@@ -157,6 +158,32 @@ Moods change every 2-4 hours based on stats:
 - Tired pets → more likely to be lazy
 - Unhappy pets → more likely to be needy
 - Happy/rested pets → random mood
+
+## Chronotypes
+
+Each pet is born with a random **chronotype** that determines their natural sleep/wake cycle:
+
+| Chronotype | Emoji | Active Hours | Description |
+|------------|-------|--------------|-------------|
+| Early Bird | 🌅 | 5am - 9pm | Morning pet, sleeps early |
+| Normal | ☀️ | 7am - 11pm | Standard schedule |
+| Night Owl | 🦉 | 10am - 2am | Late riser, stays up late |
+
+**Effects:**
+
+**During Active Hours (preferred wake time):**
+- Normal energy decay
+- Full happiness bonus from play
+- Won't auto-sleep unless energy critically low
+
+**Outside Active Hours (should be sleeping):**
+- 50% faster energy drain when awake
+- 30% reduced happiness from play
+- Auto-sleeps at higher energy threshold (40% vs 20%)
+- Won't auto-wake even if energy restored
+
+**During Preferred Sleep Hours:**
+- 20% faster energy recovery while sleeping
 
 ## Stat Decay Rates
 

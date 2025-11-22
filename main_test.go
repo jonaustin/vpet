@@ -543,8 +543,8 @@ func TestTimeBasedUpdates(t *testing.T) {
 	originalRandFloat64 := randFloat64
 	defer func() { randFloat64 = originalRandFloat64 }()
 
-	// Set current time
-	currentTime := time.Now().UTC()
+	// Set current time to noon local time (during active hours for Night Owl chronotype)
+	currentTime := time.Date(2024, 1, 1, 12, 0, 0, 0, time.Local)
 	timeNow = func() time.Time { return currentTime }
 
 	// Prevent random illness from making test non-deterministic
@@ -562,6 +562,7 @@ func TestTimeBasedUpdates(t *testing.T) {
 
 	// Save initial state
 	pet := newPet(testCfg)
+	pet.Chronotype = ChronotypeNightOwl // Set chronotype where noon is in active hours (10am-2am)
 	saveState(&pet)
 
 	// Fix the LastSaved time in the saved file
@@ -1176,7 +1177,8 @@ func TestStatCalculationPrecision(t *testing.T) {
 	})
 
 	t.Run("One hour updates stats correctly", func(t *testing.T) {
-		currentTime := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
+		// Use local time noon which is active hours for Night Owl (10am-2am)
+		currentTime := time.Date(2024, 1, 1, 12, 0, 0, 0, time.Local)
 		oneHourAgo := currentTime.Add(-1 * time.Hour)
 		timeNow = func() time.Time { return currentTime }
 
@@ -1189,6 +1191,7 @@ func TestStatCalculationPrecision(t *testing.T) {
 			LastSavedTime:    oneHourAgo,
 		}
 		pet := newPet(testCfg)
+		pet.Chronotype = ChronotypeNightOwl // Noon is active hours for Night Owl
 		saveState(&pet)
 
 		// Fix LastSaved time in file
@@ -1215,7 +1218,8 @@ func TestStatCalculationPrecision(t *testing.T) {
 	})
 
 	t.Run("Sleep recovery uses floating point correctly", func(t *testing.T) {
-		currentTime := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
+		// Use local time noon which is active hours for Night Owl (no recovery boost)
+		currentTime := time.Date(2024, 1, 1, 12, 0, 0, 0, time.Local)
 		thirtyMinutesAgo := currentTime.Add(-30 * time.Minute)
 		timeNow = func() time.Time { return currentTime }
 
@@ -1228,6 +1232,7 @@ func TestStatCalculationPrecision(t *testing.T) {
 			LastSavedTime:    thirtyMinutesAgo,
 		}
 		pet := newPet(testCfg)
+		pet.Chronotype = ChronotypeNightOwl // Noon is active hours (no sleep recovery boost)
 		saveState(&pet)
 
 		// Fix LastSaved time in file
@@ -1770,10 +1775,12 @@ func TestAutonomousBehavior(t *testing.T) {
 	})
 
 	t.Run("No auto-sleep above threshold", func(t *testing.T) {
-		currentTime := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
+		// Use local time 12:00 which is active hours for Night Owl (10am-2am)
+		currentTime := time.Date(2024, 1, 1, 12, 0, 0, 0, time.Local)
 		timeNow = func() time.Time { return currentTime }
 
 		pet := newPet(nil)
+		pet.Chronotype = ChronotypeNightOwl // Ensure 12:00 local is in active hours
 		pet.Energy = autoSleepThreshold + 1 // Above threshold
 		pet.Sleeping = false
 
@@ -1785,11 +1792,13 @@ func TestAutonomousBehavior(t *testing.T) {
 	})
 
 	t.Run("Auto-wake after minimum sleep with restored energy", func(t *testing.T) {
-		currentTime := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
+		// Use local time 12:00 which is active hours for Night Owl (10am-2am)
+		currentTime := time.Date(2024, 1, 1, 12, 0, 0, 0, time.Local)
 		sleepStartTime := currentTime.Add(-7 * time.Hour) // 7 hours ago (> minSleepDuration of 6)
 		timeNow = func() time.Time { return currentTime }
 
 		pet := newPet(nil)
+		pet.Chronotype = ChronotypeNightOwl // Ensure 12:00 local is in active hours
 		pet.Sleeping = true
 		pet.AutoSleepTime = &sleepStartTime
 		pet.Energy = autoWakeEnergy // Energy restored (80)
