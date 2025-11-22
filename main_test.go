@@ -689,24 +689,35 @@ func TestGetStatus(t *testing.T) {
 	t.Run("Dead status", func(t *testing.T) {
 		pet := newPet(nil)
 		pet.Dead = true
-		if status := getStatus(pet); status != "💀 Dead" {
-			t.Errorf("Expected dead status, got %s", status)
+		if status := getStatus(pet); status != "💀" {
+			t.Errorf("Expected 💀, got %s", status)
 		}
 	})
 
 	t.Run("Sleeping status", func(t *testing.T) {
 		pet := newPet(nil)
 		pet.Sleeping = true
-		if status := getStatus(pet); status != "😴 Sleeping" {
-			t.Errorf("Expected sleeping status, got %s", status)
+		if status := getStatus(pet); status != "😴" {
+			t.Errorf("Expected 😴, got %s", status)
 		}
 	})
 
-	t.Run("Hungry status", func(t *testing.T) {
+	t.Run("Hungry status (awake)", func(t *testing.T) {
 		pet := newPet(nil)
 		pet.Hunger = lowStatThreshold - 1
-		if status := getStatus(pet); status != "🙀 Hungry" {
-			t.Errorf("Expected hungry status, got %s", status)
+		// Activity (awake) + Feeling (hungry)
+		if status := getStatus(pet); status != "😸🙀" {
+			t.Errorf("Expected 😸🙀, got %s", status)
+		}
+	})
+
+	t.Run("Hungry status (sleeping)", func(t *testing.T) {
+		pet := newPet(nil)
+		pet.Hunger = lowStatThreshold - 1
+		pet.Sleeping = true
+		// Activity (sleeping) + Feeling (hungry)
+		if status := getStatus(pet); status != "😴🙀" {
+			t.Errorf("Expected 😴🙀, got %s", status)
 		}
 	})
 
@@ -715,8 +726,127 @@ func TestGetStatus(t *testing.T) {
 		pet.Hunger = maxStat
 		pet.Energy = maxStat
 		pet.Happiness = maxStat
-		if status := getStatus(pet); status != "😸 Happy" {
-			t.Errorf("Expected happy status, got %s", status)
+		// Activity (awake) + no feeling (all good)
+		if status := getStatus(pet); status != "😸" {
+			t.Errorf("Expected 😸, got %s", status)
+		}
+	})
+
+	t.Run("Event with critical stat", func(t *testing.T) {
+		currentTime := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
+		originalTimeNow := timeNow
+		timeNow = func() time.Time { return currentTime }
+		defer func() { timeNow = originalTimeNow }()
+
+		pet := newPet(nil)
+		pet.Hunger = lowStatThreshold - 1 // Critical hunger
+		pet.CurrentEvent = &Event{
+			Type:      EventChasing,
+			StartTime: currentTime,
+			ExpiresAt: currentTime.Add(10 * time.Minute),
+			Responded: false,
+		}
+		// Should show event emoji + hungry feeling
+		if status := getStatus(pet); status != "🦋🙀" {
+			t.Errorf("Expected 🦋🙀 (event + hungry), got %s", status)
+		}
+	})
+
+	t.Run("Event without critical stat", func(t *testing.T) {
+		currentTime := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
+		originalTimeNow := timeNow
+		timeNow = func() time.Time { return currentTime }
+		defer func() { timeNow = originalTimeNow }()
+
+		pet := newPet(nil)
+		pet.CurrentEvent = &Event{
+			Type:      EventSinging,
+			StartTime: currentTime,
+			ExpiresAt: currentTime.Add(5 * time.Minute),
+			Responded: false,
+		}
+		// Should show just event emoji
+		if status := getStatus(pet); status != "🎵" {
+			t.Errorf("Expected 🎵 (event only), got %s", status)
+		}
+	})
+
+	t.Run("Sleeping with critical stat", func(t *testing.T) {
+		pet := newPet(nil)
+		pet.Sleeping = true
+		pet.Energy = lowStatThreshold - 1 // Critical energy
+		// Activity (sleeping) + Feeling (tired)
+		if status := getStatus(pet); status != "😴😾" {
+			t.Errorf("Expected 😴😾, got %s", status)
+		}
+	})
+
+	t.Run("Drowsy status when energy between thresholds", func(t *testing.T) {
+		pet := newPet(nil)
+		pet.Energy = 35 // Above critical (30) but below drowsy (40)
+		pet.Sleeping = false
+		// Should show awake + drowsy
+		if status := getStatus(pet); status != "😸🥱" {
+			t.Errorf("Expected 😸🥱 (drowsy), got %s", status)
+		}
+	})
+
+	t.Run("No drowsy when sleeping", func(t *testing.T) {
+		pet := newPet(nil)
+		pet.Energy = 35 // Below drowsy threshold
+		pet.Sleeping = true
+		// Should not show drowsy when sleeping
+		if status := getStatus(pet); status != "😴" {
+			t.Errorf("Expected 😴 (sleeping, no drowsy), got %s", status)
+		}
+	})
+
+	t.Run("Sad status lowest priority", func(t *testing.T) {
+		pet := newPet(nil)
+		pet.Happiness = lowStatThreshold - 1 // Low happiness
+		// Activity (awake) + Feeling (sad)
+		if status := getStatus(pet); status != "😸😿" {
+			t.Errorf("Expected 😸😿, got %s", status)
+		}
+	})
+
+	t.Run("Sick status when health is lowest", func(t *testing.T) {
+		pet := newPet(nil)
+		pet.Health = lowStatThreshold - 1 // Low health
+		// Activity (awake) + Feeling (sick)
+		if status := getStatus(pet); status != "😸🤢" {
+			t.Errorf("Expected 😸🤢, got %s", status)
+		}
+	})
+
+	t.Run("Lowest stat determines feeling", func(t *testing.T) {
+		pet := newPet(nil)
+		pet.Hunger = 25    // Low
+		pet.Happiness = 20 // Lowest
+		pet.Energy = 28    // Low
+		pet.Health = 26    // Low
+		// Happiness is lowest, so should show sad
+		if status := getStatus(pet); status != "😸😿" {
+			t.Errorf("Expected 😸😿 (sad for lowest happiness), got %s", status)
+		}
+	})
+
+	t.Run("Responded event shows normal activity", func(t *testing.T) {
+		currentTime := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
+		originalTimeNow := timeNow
+		timeNow = func() time.Time { return currentTime }
+		defer func() { timeNow = originalTimeNow }()
+
+		pet := newPet(nil)
+		pet.CurrentEvent = &Event{
+			Type:      EventChasing,
+			StartTime: currentTime,
+			ExpiresAt: currentTime.Add(10 * time.Minute),
+			Responded: true, // Already responded
+		}
+		// Should show normal awake status since event is responded
+		if status := getStatus(pet); status != "😸" {
+			t.Errorf("Expected 😸 (responded event shows normal), got %s", status)
 		}
 	})
 }
@@ -732,8 +862,8 @@ func TestNewPetLogging(t *testing.T) {
 	}
 
 	firstLog := pet.Logs[0]
-	if firstLog.NewStatus != "😸 Happy" {
-		t.Errorf("Expected initial status '😸 Happy', got '%s'", firstLog.NewStatus)
+	if firstLog.NewStatus != "😸" {
+		t.Errorf("Expected initial status '😸', got '%s'", firstLog.NewStatus)
 	}
 	if firstLog.Time.After(time.Now()) {
 		t.Error("Initial log time should not be in the future")
@@ -771,10 +901,10 @@ func TestStatusLogging(t *testing.T) {
 			old string
 			new string
 		}{
-			{"", initialStatus},         // Initial status
-			{initialStatus, "🙀 Hungry"},  // First change: hunger is lowest
-			{"🙀 Hungry", "😾 Tired"},     // Second change: energy becomes lowest
-			{"😾 Tired", "😴 Sleeping"},   // Third change: no critical stats, sleeping
+			{"", initialStatus},           // Initial status
+			{initialStatus, "😸🙀"},       // First change: awake + hungry
+			{"😸🙀", "😸😾"},              // Second change: awake + tired (lower than hungry)
+			{"😸😾", "😴"},                // Third change: sleeping, no critical stats
 		}
 
 		for i, expected := range expectedStatuses {
@@ -799,11 +929,11 @@ func TestStatusLogging(t *testing.T) {
 		}
 
 		changeLog := pet.Logs[1]
-		if changeLog.OldStatus != "😸 Happy" {
-			t.Errorf("Expected OldStatus '😸 Happy', got '%s'", changeLog.OldStatus)
+		if changeLog.OldStatus != "😸" {
+			t.Errorf("Expected OldStatus '😸', got '%s'", changeLog.OldStatus)
 		}
-		if changeLog.NewStatus != "🙀 Hungry" {
-			t.Errorf("Expected NewStatus '🙀 Hungry', got '%s'", changeLog.NewStatus)
+		if changeLog.NewStatus != "😸🙀" {
+			t.Errorf("Expected NewStatus '😸🙀', got '%s'", changeLog.NewStatus)
 		}
 	})
 
@@ -991,9 +1121,790 @@ func TestDeathLogging(t *testing.T) {
 	}
 
 	lastLog := pet.Logs[len(pet.Logs)-1]
-	if lastLog.NewStatus != "💀 Dead" {
-		t.Errorf("Last log entry should be death status, got '%s'", lastLog.NewStatus)
+	if lastLog.NewStatus != "💀" {
+		t.Errorf("Last log entry should be death status '💀', got '%s'", lastLog.NewStatus)
 	}
+}
+
+func TestStatCalculationPrecision(t *testing.T) {
+	cleanup := setupTestFile(t)
+	defer cleanup()
+
+	// Save original functions and restore after test
+	originalTimeNow := timeNow
+	originalRandFloat64 := randFloat64
+	defer func() {
+		timeNow = originalTimeNow
+		randFloat64 = originalRandFloat64
+	}()
+
+	// Prevent random illness/events from interfering
+	randFloat64 = func() float64 { return 1.0 }
+
+	t.Run("Short elapsed time updates stats correctly", func(t *testing.T) {
+		// This tests the floating-point fix - previously int(elapsed.Minutes()) truncated small intervals
+		currentTime := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
+		threeSecondsAgo := currentTime.Add(-3 * time.Second) // Typical tmux update interval
+		timeNow = func() time.Time { return currentTime }
+
+		testCfg := &TestConfig{
+			InitialHunger:    100,
+			InitialHappiness: 100,
+			InitialEnergy:    100,
+			Health:           100,
+			LastSavedTime:    threeSecondsAgo,
+		}
+		pet := newPet(testCfg)
+		saveState(&pet)
+
+		// Fix LastSaved time in file
+		data, _ := os.ReadFile(testConfigPath)
+		var savedPet Pet
+		json.Unmarshal(data, &savedPet)
+		savedPet.LastSaved = threeSecondsAgo
+		data, _ = json.MarshalIndent(savedPet, "", "  ")
+		os.WriteFile(testConfigPath, data, 0644)
+
+		loadedPet := loadState()
+
+		// 3 seconds = 0.000833 hours
+		// With 5/hr hunger rate: 0.000833 * 5 = 0.004 ≈ 0 (truncated)
+		// Stats should not change significantly for such short interval
+		if loadedPet.Hunger != 100 {
+			t.Errorf("Expected hunger 100 for 3-second interval, got %d", loadedPet.Hunger)
+		}
+	})
+
+	t.Run("One hour updates stats correctly", func(t *testing.T) {
+		currentTime := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
+		oneHourAgo := currentTime.Add(-1 * time.Hour)
+		timeNow = func() time.Time { return currentTime }
+
+		testCfg := &TestConfig{
+			InitialHunger:    100,
+			InitialHappiness: 100,
+			InitialEnergy:    100,
+			Health:           100,
+			IsSleeping:       false,
+			LastSavedTime:    oneHourAgo,
+		}
+		pet := newPet(testCfg)
+		saveState(&pet)
+
+		// Fix LastSaved time in file
+		data, _ := os.ReadFile(testConfigPath)
+		var savedPet Pet
+		json.Unmarshal(data, &savedPet)
+		savedPet.LastSaved = oneHourAgo
+		data, _ = json.MarshalIndent(savedPet, "", "  ")
+		os.WriteFile(testConfigPath, data, 0644)
+
+		loadedPet := loadState()
+
+		// 1 hour awake: hunger -5, energy -2 (every 2 hours so ~2), happiness unchanged
+		expectedHunger := 100 - hungerDecreaseRate // 100 - 5 = 95
+		if loadedPet.Hunger != expectedHunger {
+			t.Errorf("Expected hunger %d, got %d", expectedHunger, loadedPet.Hunger)
+		}
+
+		// Energy decreases every 2 hours, so 1 hour = 0.5 cycles = 2 energy loss
+		expectedEnergy := 100 - (energyDecreaseRate / 2) // 100 - 2 = 98
+		if loadedPet.Energy != expectedEnergy {
+			t.Errorf("Expected energy %d, got %d", expectedEnergy, loadedPet.Energy)
+		}
+	})
+
+	t.Run("Sleep recovery uses floating point correctly", func(t *testing.T) {
+		currentTime := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
+		thirtyMinutesAgo := currentTime.Add(-30 * time.Minute)
+		timeNow = func() time.Time { return currentTime }
+
+		testCfg := &TestConfig{
+			InitialHunger:    100,
+			InitialHappiness: 100,
+			InitialEnergy:    50, // Start with 50 energy
+			Health:           100,
+			IsSleeping:       true,
+			LastSavedTime:    thirtyMinutesAgo,
+		}
+		pet := newPet(testCfg)
+		saveState(&pet)
+
+		// Fix LastSaved time in file
+		data, _ := os.ReadFile(testConfigPath)
+		var savedPet Pet
+		json.Unmarshal(data, &savedPet)
+		savedPet.LastSaved = thirtyMinutesAgo
+		data, _ = json.MarshalIndent(savedPet, "", "  ")
+		os.WriteFile(testConfigPath, data, 0644)
+
+		loadedPet := loadState()
+
+		// 30 minutes = 0.5 hours
+		// Energy recovery: 0.5 * 10 = 5
+		// Hunger (sleeping): 0.5 * 3 = 1.5 → 1
+		expectedEnergy := min(50+5, maxStat) // 55
+		if loadedPet.Energy != expectedEnergy {
+			t.Errorf("Expected energy %d after 30min sleep, got %d", expectedEnergy, loadedPet.Energy)
+		}
+
+		expectedHunger := 100 - 1 // 0.5 * 3 = 1.5 truncated to 1
+		if loadedPet.Hunger != expectedHunger {
+			t.Errorf("Expected hunger %d, got %d", expectedHunger, loadedPet.Hunger)
+		}
+	})
+
+	t.Run("Happiness decay when stats low", func(t *testing.T) {
+		currentTime := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
+		twoHoursAgo := currentTime.Add(-2 * time.Hour)
+		timeNow = func() time.Time { return currentTime }
+
+		testCfg := &TestConfig{
+			InitialHunger:    20, // Below threshold (30)
+			InitialHappiness: 100,
+			InitialEnergy:    100,
+			Health:           100,
+			IsSleeping:       false,
+			LastSavedTime:    twoHoursAgo,
+		}
+		pet := newPet(testCfg)
+		saveState(&pet)
+
+		// Fix LastSaved time in file
+		data, _ := os.ReadFile(testConfigPath)
+		var savedPet Pet
+		json.Unmarshal(data, &savedPet)
+		savedPet.LastSaved = twoHoursAgo
+		data, _ = json.MarshalIndent(savedPet, "", "  ")
+		os.WriteFile(testConfigPath, data, 0644)
+
+		loadedPet := loadState()
+
+		// 2 hours with low hunger: happiness decreases 2 * 2 = 4
+		expectedHappiness := 100 - (2 * happinessDecreaseRate) // 100 - 4 = 96
+		if loadedPet.Happiness != expectedHappiness {
+			t.Errorf("Expected happiness %d, got %d", expectedHappiness, loadedPet.Happiness)
+		}
+	})
+
+	t.Run("Health decay with critically low stats", func(t *testing.T) {
+		currentTime := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
+		threeHoursAgo := currentTime.Add(-3 * time.Hour)
+		timeNow = func() time.Time { return currentTime }
+
+		testCfg := &TestConfig{
+			InitialHunger:    10, // Below 15 (critical)
+			InitialHappiness: 100,
+			InitialEnergy:    100,
+			Health:           100,
+			IsSleeping:       false,
+			LastSavedTime:    threeHoursAgo,
+		}
+		pet := newPet(testCfg)
+		saveState(&pet)
+
+		// Fix LastSaved time in file
+		data, _ := os.ReadFile(testConfigPath)
+		var savedPet Pet
+		json.Unmarshal(data, &savedPet)
+		savedPet.LastSaved = threeHoursAgo
+		data, _ = json.MarshalIndent(savedPet, "", "  ")
+		os.WriteFile(testConfigPath, data, 0644)
+
+		loadedPet := loadState()
+
+		// 3 hours with critically low hunger: health decreases 3 * 2 = 6
+		expectedHealth := 100 - (3 * healthDecreaseRate) // 100 - 6 = 94
+		if loadedPet.Health != expectedHealth {
+			t.Errorf("Expected health %d, got %d", expectedHealth, loadedPet.Health)
+		}
+	})
+}
+
+func TestActionRefusal(t *testing.T) {
+	cleanup := setupTestFile(t)
+	defer cleanup()
+
+	// Save original functions and restore after test
+	originalTimeNow := timeNow
+	defer func() { timeNow = originalTimeNow }()
+
+	currentTime := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
+	timeNow = func() time.Time { return currentTime }
+
+	t.Run("Feed refused when too full", func(t *testing.T) {
+		testCfg := &TestConfig{
+			InitialHunger:    95, // Above 90 threshold
+			InitialHappiness: 50,
+			InitialEnergy:    50,
+			Health:           50,
+			LastSavedTime:    currentTime,
+		}
+		m := initialModel(testCfg)
+		originalHunger := m.pet.Hunger
+
+		m.feed()
+
+		// Hunger should not change
+		if m.pet.Hunger != originalHunger {
+			t.Errorf("Hunger should not change when too full, was %d now %d", originalHunger, m.pet.Hunger)
+		}
+		// Should have refusal message
+		if m.message == "" {
+			t.Error("Should show refusal message")
+		}
+	})
+
+	t.Run("Feed succeeds when hungry", func(t *testing.T) {
+		testCfg := &TestConfig{
+			InitialHunger:    50, // Below 90 threshold
+			InitialHappiness: 50,
+			InitialEnergy:    50,
+			Health:           50,
+			LastSavedTime:    currentTime,
+		}
+		m := initialModel(testCfg)
+
+		m.feed()
+
+		if m.pet.Hunger <= 50 {
+			t.Errorf("Hunger should increase after feeding, got %d", m.pet.Hunger)
+		}
+	})
+
+	t.Run("Play refused when too tired", func(t *testing.T) {
+		testCfg := &TestConfig{
+			InitialHunger:    50,
+			InitialHappiness: 50,
+			InitialEnergy:    autoSleepThreshold - 1, // Below threshold (19)
+			Health:           50,
+			LastSavedTime:    currentTime,
+		}
+		m := initialModel(testCfg)
+		originalHappiness := m.pet.Happiness
+
+		m.play()
+
+		// Happiness should not change
+		if m.pet.Happiness != originalHappiness {
+			t.Error("Happiness should not change when too tired to play")
+		}
+		// Should have refusal message
+		if m.message == "" {
+			t.Error("Should show refusal message")
+		}
+	})
+
+	t.Run("Play refused when lazy mood and low energy", func(t *testing.T) {
+		testCfg := &TestConfig{
+			InitialHunger:    50,
+			InitialHappiness: 50,
+			InitialEnergy:    45, // Below 50 threshold for lazy mood check
+			Health:           50,
+			LastSavedTime:    currentTime,
+		}
+		m := initialModel(testCfg)
+		m.pet.Mood = "lazy"
+		originalHappiness := m.pet.Happiness
+
+		m.play()
+
+		// Happiness should not change
+		if m.pet.Happiness != originalHappiness {
+			t.Error("Lazy pet with low energy should refuse to play")
+		}
+		if m.message == "" {
+			t.Error("Should show refusal message for lazy pet")
+		}
+	})
+
+	t.Run("Lazy pet plays when energy high enough", func(t *testing.T) {
+		testCfg := &TestConfig{
+			InitialHunger:    50,
+			InitialHappiness: 50,
+			InitialEnergy:    60, // Above 50 threshold
+			Health:           50,
+			LastSavedTime:    currentTime,
+		}
+		m := initialModel(testCfg)
+		m.pet.Mood = "lazy"
+
+		m.play()
+
+		// Happiness should increase
+		if m.pet.Happiness <= 50 {
+			t.Error("Lazy pet should play when energy is high enough")
+		}
+	})
+
+	t.Run("Play succeeds with playful mood message", func(t *testing.T) {
+		testCfg := &TestConfig{
+			InitialHunger:    50,
+			InitialHappiness: 50,
+			InitialEnergy:    60,
+			Health:           50,
+			LastSavedTime:    currentTime,
+		}
+		m := initialModel(testCfg)
+		m.pet.Mood = "playful"
+
+		m.play()
+
+		if m.pet.Happiness <= 50 {
+			t.Error("Play should increase happiness")
+		}
+		// Should have happy message
+		if m.message == "" {
+			t.Error("Should show success message")
+		}
+	})
+
+	t.Run("Feed clears auto-sleep", func(t *testing.T) {
+		sleepTime := currentTime.Add(-1 * time.Hour)
+		testCfg := &TestConfig{
+			InitialHunger:    50,
+			InitialHappiness: 50,
+			InitialEnergy:    50,
+			Health:           50,
+			IsSleeping:       true,
+			LastSavedTime:    currentTime,
+		}
+		m := initialModel(testCfg)
+		m.pet.AutoSleepTime = &sleepTime
+
+		m.feed()
+
+		if m.pet.Sleeping {
+			t.Error("Feeding should wake pet")
+		}
+		if m.pet.AutoSleepTime != nil {
+			t.Error("Feeding should clear AutoSleepTime")
+		}
+	})
+
+	t.Run("Play clears auto-sleep", func(t *testing.T) {
+		sleepTime := currentTime.Add(-1 * time.Hour)
+		testCfg := &TestConfig{
+			InitialHunger:    50,
+			InitialHappiness: 50,
+			InitialEnergy:    50,
+			Health:           50,
+			IsSleeping:       true,
+			LastSavedTime:    currentTime,
+		}
+		m := initialModel(testCfg)
+		m.pet.AutoSleepTime = &sleepTime
+
+		m.play()
+
+		if m.pet.Sleeping {
+			t.Error("Playing should wake pet")
+		}
+		if m.pet.AutoSleepTime != nil {
+			t.Error("Playing should clear AutoSleepTime")
+		}
+	})
+}
+
+func TestLifeEvents(t *testing.T) {
+	cleanup := setupTestFile(t)
+	defer cleanup()
+
+	// Save original functions and restore after test
+	originalTimeNow := timeNow
+	originalRandFloat64 := randFloat64
+	defer func() {
+		timeNow = originalTimeNow
+		randFloat64 = originalRandFloat64
+	}()
+
+	t.Run("Event triggers when conditions met", func(t *testing.T) {
+		currentTime := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
+		timeNow = func() time.Time { return currentTime }
+		// High chance roll to trigger event
+		randFloat64 = func() float64 { return 0.01 } // Very low = high chance
+
+		pet := newPet(nil)
+		pet.Sleeping = false
+		pet.Energy = 50
+		pet.Mood = "playful"
+		pet.CurrentEvent = nil
+
+		triggerRandomEvent(&pet)
+
+		if pet.CurrentEvent == nil {
+			t.Error("Expected event to trigger")
+		}
+	})
+
+	t.Run("No event trigger when one is active", func(t *testing.T) {
+		currentTime := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
+		timeNow = func() time.Time { return currentTime }
+		randFloat64 = func() float64 { return 0.01 }
+
+		pet := newPet(nil)
+		// Set up existing active event
+		existingEvent := &Event{
+			Type:      EventChasing,
+			StartTime: currentTime,
+			ExpiresAt: currentTime.Add(10 * time.Minute),
+			Responded: false,
+		}
+		pet.CurrentEvent = existingEvent
+
+		triggerRandomEvent(&pet)
+
+		// Should still be the same event
+		if pet.CurrentEvent.Type != EventChasing {
+			t.Error("Should not replace active event")
+		}
+	})
+
+	t.Run("Expired ignored event applies consequences", func(t *testing.T) {
+		currentTime := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
+		timeNow = func() time.Time { return currentTime }
+		// High roll to prevent new event
+		randFloat64 = func() float64 { return 0.99 }
+
+		pet := newPet(nil)
+		pet.Happiness = 50 // Will lose 15 from scared event
+		// Set up expired, unresponded scared event
+		expiredEvent := &Event{
+			Type:      EventScared,
+			StartTime: currentTime.Add(-10 * time.Minute),
+			ExpiresAt: currentTime.Add(-5 * time.Minute), // Expired
+			Responded: false,
+		}
+		pet.CurrentEvent = expiredEvent
+
+		triggerRandomEvent(&pet)
+
+		// Scared event penalty: -15 happiness
+		if pet.Happiness != 35 {
+			t.Errorf("Expected happiness 35 after ignored scared event, got %d", pet.Happiness)
+		}
+		// Event should be logged as ignored
+		if len(pet.EventLog) == 0 {
+			t.Error("Event should be logged")
+		}
+		if !pet.EventLog[len(pet.EventLog)-1].WasIgnored {
+			t.Error("Event should be marked as ignored")
+		}
+	})
+
+	t.Run("Respond to event gives reward", func(t *testing.T) {
+		currentTime := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
+		timeNow = func() time.Time { return currentTime }
+
+		pet := newPet(nil)
+		pet.Happiness = 50
+		// Set up active cuddles event
+		pet.CurrentEvent = &Event{
+			Type:      EventCuddles,
+			StartTime: currentTime,
+			ExpiresAt: currentTime.Add(10 * time.Minute),
+			Responded: false,
+		}
+
+		result := pet.respondToEvent()
+
+		// Cuddles gives +25 happiness, +5 energy
+		if pet.Happiness != 75 {
+			t.Errorf("Expected happiness 75 after cuddles, got %d", pet.Happiness)
+		}
+		if result == "" {
+			t.Error("Expected response message")
+		}
+		if !pet.CurrentEvent.Responded {
+			t.Error("Event should be marked as responded")
+		}
+		if len(pet.EventLog) == 0 {
+			t.Error("Event should be logged")
+		}
+		if pet.EventLog[len(pet.EventLog)-1].WasIgnored {
+			t.Error("Event should not be marked as ignored")
+		}
+	})
+
+	t.Run("Cannot respond to already responded event", func(t *testing.T) {
+		currentTime := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
+		timeNow = func() time.Time { return currentTime }
+
+		pet := newPet(nil)
+		pet.Happiness = 50
+		pet.CurrentEvent = &Event{
+			Type:      EventCuddles,
+			StartTime: currentTime,
+			ExpiresAt: currentTime.Add(10 * time.Minute),
+			Responded: true, // Already responded
+		}
+
+		result := pet.respondToEvent()
+
+		if result != "" {
+			t.Error("Should not be able to respond to already responded event")
+		}
+		// Happiness should not change
+		if pet.Happiness != 50 {
+			t.Error("Happiness should not change for already responded event")
+		}
+	})
+
+	t.Run("Event log limited to 20 entries", func(t *testing.T) {
+		currentTime := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
+		timeNow = func() time.Time { return currentTime }
+
+		pet := newPet(nil)
+		// Fill event log with 25 entries
+		for i := 0; i < 25; i++ {
+			pet.EventLog = append(pet.EventLog, EventLogEntry{
+				Type:       EventChasing,
+				Time:       currentTime,
+				WasIgnored: false,
+			})
+		}
+
+		// Respond to a new event to trigger log cleanup
+		pet.CurrentEvent = &Event{
+			Type:      EventCuddles,
+			StartTime: currentTime,
+			ExpiresAt: currentTime.Add(10 * time.Minute),
+			Responded: false,
+		}
+		pet.respondToEvent()
+
+		if len(pet.EventLog) > 20 {
+			t.Errorf("Event log should be limited to 20 entries, got %d", len(pet.EventLog))
+		}
+	})
+
+	t.Run("Dead pet gets no events", func(t *testing.T) {
+		currentTime := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
+		timeNow = func() time.Time { return currentTime }
+		randFloat64 = func() float64 { return 0.01 } // Would trigger
+
+		pet := newPet(nil)
+		pet.Dead = true
+		pet.CurrentEvent = nil
+
+		triggerRandomEvent(&pet)
+
+		if pet.CurrentEvent != nil {
+			t.Error("Dead pet should not get events")
+		}
+	})
+
+	t.Run("getEventDisplay returns correct info for active event", func(t *testing.T) {
+		currentTime := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
+		timeNow = func() time.Time { return currentTime }
+
+		pet := newPet(nil)
+		pet.CurrentEvent = &Event{
+			Type:      EventChasing,
+			StartTime: currentTime,
+			ExpiresAt: currentTime.Add(10 * time.Minute),
+			Responded: false,
+		}
+
+		emoji, msg, hasEvent := pet.getEventDisplay()
+
+		if !hasEvent {
+			t.Error("Expected hasEvent to be true")
+		}
+		if emoji != "🦋" {
+			t.Errorf("Expected butterfly emoji, got %s", emoji)
+		}
+		if msg != "chasing a butterfly!" {
+			t.Errorf("Expected chasing message, got %s", msg)
+		}
+	})
+
+	t.Run("getEventDisplay returns false for expired event", func(t *testing.T) {
+		currentTime := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
+		timeNow = func() time.Time { return currentTime }
+
+		pet := newPet(nil)
+		pet.CurrentEvent = &Event{
+			Type:      EventChasing,
+			StartTime: currentTime.Add(-15 * time.Minute),
+			ExpiresAt: currentTime.Add(-5 * time.Minute), // Expired
+			Responded: false,
+		}
+
+		_, _, hasEvent := pet.getEventDisplay()
+
+		if hasEvent {
+			t.Error("Expected hasEvent to be false for expired event")
+		}
+	})
+}
+
+func TestAutonomousBehavior(t *testing.T) {
+	cleanup := setupTestFile(t)
+	defer cleanup()
+
+	// Save original functions and restore after test
+	originalTimeNow := timeNow
+	originalRandFloat64 := randFloat64
+	defer func() {
+		timeNow = originalTimeNow
+		randFloat64 = originalRandFloat64
+	}()
+
+	t.Run("Auto-sleep when energy critical", func(t *testing.T) {
+		currentTime := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
+		timeNow = func() time.Time { return currentTime }
+
+		pet := newPet(nil)
+		pet.Energy = autoSleepThreshold // At threshold (20)
+		pet.Sleeping = false
+
+		applyAutonomousBehavior(&pet)
+
+		if !pet.Sleeping {
+			t.Error("Pet should auto-sleep when energy <= autoSleepThreshold")
+		}
+		if pet.AutoSleepTime == nil {
+			t.Error("AutoSleepTime should be set when auto-sleeping")
+		}
+	})
+
+	t.Run("No auto-sleep above threshold", func(t *testing.T) {
+		currentTime := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
+		timeNow = func() time.Time { return currentTime }
+
+		pet := newPet(nil)
+		pet.Energy = autoSleepThreshold + 1 // Above threshold
+		pet.Sleeping = false
+
+		applyAutonomousBehavior(&pet)
+
+		if pet.Sleeping {
+			t.Error("Pet should not auto-sleep when energy > autoSleepThreshold")
+		}
+	})
+
+	t.Run("Auto-wake after minimum sleep with restored energy", func(t *testing.T) {
+		currentTime := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
+		sleepStartTime := currentTime.Add(-7 * time.Hour) // 7 hours ago (> minSleepDuration of 6)
+		timeNow = func() time.Time { return currentTime }
+
+		pet := newPet(nil)
+		pet.Sleeping = true
+		pet.AutoSleepTime = &sleepStartTime
+		pet.Energy = autoWakeEnergy // Energy restored (80)
+
+		applyAutonomousBehavior(&pet)
+
+		if pet.Sleeping {
+			t.Error("Pet should auto-wake after minimum sleep duration with restored energy")
+		}
+		if pet.AutoSleepTime != nil {
+			t.Error("AutoSleepTime should be cleared after waking")
+		}
+	})
+
+	t.Run("No auto-wake before minimum sleep duration", func(t *testing.T) {
+		currentTime := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
+		sleepStartTime := currentTime.Add(-4 * time.Hour) // Only 4 hours (< minSleepDuration of 6)
+		timeNow = func() time.Time { return currentTime }
+
+		pet := newPet(nil)
+		pet.Sleeping = true
+		pet.AutoSleepTime = &sleepStartTime
+		pet.Energy = maxStat // Full energy
+
+		applyAutonomousBehavior(&pet)
+
+		if !pet.Sleeping {
+			t.Error("Pet should not wake before minimum sleep duration")
+		}
+	})
+
+	t.Run("Force wake after maximum sleep duration", func(t *testing.T) {
+		currentTime := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
+		sleepStartTime := currentTime.Add(-9 * time.Hour) // 9 hours (> maxSleepDuration of 8)
+		timeNow = func() time.Time { return currentTime }
+
+		pet := newPet(nil)
+		pet.Sleeping = true
+		pet.AutoSleepTime = &sleepStartTime
+		pet.Energy = 50 // Energy not fully restored
+
+		applyAutonomousBehavior(&pet)
+
+		if pet.Sleeping {
+			t.Error("Pet should force wake after maximum sleep duration")
+		}
+	})
+
+	t.Run("Mood initialization", func(t *testing.T) {
+		currentTime := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
+		timeNow = func() time.Time { return currentTime }
+		randFloat64 = func() float64 { return 0.5 } // Deterministic
+
+		pet := newPet(nil)
+		pet.Mood = "" // Unset mood
+
+		applyAutonomousBehavior(&pet)
+
+		if pet.Mood == "" {
+			t.Error("Mood should be initialized if empty")
+		}
+		if pet.MoodExpiresAt == nil {
+			t.Error("MoodExpiresAt should be set")
+		}
+	})
+
+	t.Run("Mood changes when expired", func(t *testing.T) {
+		currentTime := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
+		expiredTime := currentTime.Add(-1 * time.Hour) // Expired 1 hour ago
+		timeNow = func() time.Time { return currentTime }
+		randFloat64 = func() float64 { return 0.75 } // Will trigger "playful" for rested/happy pet
+
+		pet := newPet(nil)
+		pet.Mood = "normal"
+		pet.MoodExpiresAt = &expiredTime
+
+		applyAutonomousBehavior(&pet)
+
+		if pet.MoodExpiresAt == nil || !pet.MoodExpiresAt.After(currentTime) {
+			t.Error("MoodExpiresAt should be updated to future time")
+		}
+	})
+
+	t.Run("Tired pet more likely to be lazy", func(t *testing.T) {
+		currentTime := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
+		timeNow = func() time.Time { return currentTime }
+		randFloat64 = func() float64 { return 0.3 } // < 0.6 = lazy when tired
+
+		pet := newPet(nil)
+		pet.Energy = drowsyThreshold - 1 // Below drowsy threshold
+		pet.Mood = ""
+		pet.MoodExpiresAt = nil
+
+		applyAutonomousBehavior(&pet)
+
+		if pet.Mood != "lazy" {
+			t.Errorf("Expected 'lazy' mood for tired pet with low roll, got '%s'", pet.Mood)
+		}
+	})
+
+	t.Run("Dead pet skips auto-sleep", func(t *testing.T) {
+		currentTime := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
+		timeNow = func() time.Time { return currentTime }
+
+		pet := newPet(nil)
+		pet.Dead = true
+		pet.Energy = 0
+		pet.Sleeping = false
+
+		applyAutonomousBehavior(&pet)
+
+		if pet.Sleeping {
+			t.Error("Dead pet should not auto-sleep")
+		}
+	})
 }
 
 func TestEvolution(t *testing.T) {

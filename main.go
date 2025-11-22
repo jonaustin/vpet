@@ -1346,7 +1346,7 @@ func (m model) renderStats() string {
 }
 
 func (m model) renderStatus() string {
-	return gameStyles.status.Render(fmt.Sprintf("Status: %s", getStatus(m.pet)))
+	return gameStyles.status.Render(fmt.Sprintf("Status: %s", getStatusWithLabel(m.pet)))
 }
 
 func (m model) renderMenu() string {
@@ -1392,57 +1392,105 @@ func (m model) deadView() string {
 
 func getStatus(p Pet) string {
 	if p.Dead {
-		return "💀 Dead"
+		return "💀"
 	}
+
+	// Icon 1: Activity (what pet is DOING)
+	var activity string
+
+	// Check for active event first
+	if p.CurrentEvent != nil && !p.CurrentEvent.Responded && timeNow().Before(p.CurrentEvent.ExpiresAt) {
+		def := getEventDefinition(p.CurrentEvent.Type)
+		if def != nil {
+			activity = def.Emoji
+		}
+	}
+
+	// If no event, show sleep or awake state
+	if activity == "" {
+		if p.Sleeping {
+			activity = "😴"
+		} else {
+			activity = "😸"
+		}
+	}
+
+	// Icon 2: Feeling (most critical need) - only show if there's an issue
+	var feeling string
 
 	// Find the lowest stat to prioritize critical issues
 	lowestStat := p.Health
-	lowestStatus := "🤢 Sick"
+	lowestFeeling := "🤢" // Sick
 
 	if p.Energy < lowestStat {
 		lowestStat = p.Energy
-		lowestStatus = "😾 Tired"
+		lowestFeeling = "😾" // Tired
 	}
 	if p.Hunger < lowestStat {
 		lowestStat = p.Hunger
-		lowestStatus = "🙀 Hungry"
+		lowestFeeling = "🙀" // Hungry
 	}
 	if p.Happiness < lowestStat {
 		lowestStat = p.Happiness
-		lowestStatus = "😿 Sad"
+		lowestFeeling = "😿" // Sad
 	}
 
-	// Show critical issues even when sleeping
+	// Show critical feeling if any stat < 30
 	if lowestStat < 30 {
-		return lowestStatus
+		feeling = lowestFeeling
+	} else if p.Energy < drowsyThreshold && !p.Sleeping {
+		// Show drowsy if not critical but energy getting low (and not sleeping)
+		feeling = "🥱"
+	}
+	// Otherwise feeling stays empty (all is well)
+
+	return activity + feeling
+}
+
+// getStatusWithLabel returns status with text labels for the UI
+func getStatusWithLabel(p Pet) string {
+	if p.Dead {
+		return "💀 Dead"
 	}
 
-	// Only show sleeping if no critical issues
-	if p.Sleeping {
-		return "😴 Sleeping"
-	}
+	status := getStatus(p)
 
-	// Show drowsy warning when energy is getting low
-	if p.Energy < drowsyThreshold {
-		return "🥱 Drowsy"
-	}
-
-	// Show mood-based status when pet is generally happy
-	switch p.Mood {
-	case "playful":
-		return "🎾 Playful"
-	case "lazy":
-		return "😪 Lazy"
-	case "needy":
-		// Show what the pet wants based on lowest non-critical stat
-		if p.Hunger < p.Happiness && p.Hunger < p.Energy {
-			return "🍖 Wants Food"
-		} else if p.Happiness < p.Energy {
-			return "🎮 Wants Play"
-		}
-		return "🥺 Wants Attention"
+	// Add descriptive label based on the icons
+	switch {
+	case strings.Contains(status, "😴") && len(status) > 4:
+		return status + " Sleeping (needs care)"
+	case strings.Contains(status, "😴"):
+		return status + " Sleeping"
+	case strings.Contains(status, "🦋"):
+		return status + " Chasing!"
+	case strings.Contains(status, "🎁"):
+		return status + " Found something!"
+	case strings.Contains(status, "⚡"):
+		return status + " Scared!"
+	case strings.Contains(status, "💭"):
+		return status + " Daydreaming"
+	case strings.Contains(status, "🤢") && strings.HasPrefix(status, "🤢"):
+		return status + " Ate something!"
+	case strings.Contains(status, "🎵"):
+		return status + " Singing!"
+	case strings.Contains(status, "😰"):
+		return status + " Nightmare!"
+	case strings.Contains(status, "💨"):
+		return status + " Zoomies!"
+	case strings.Contains(status, "🥺") && strings.HasPrefix(status, "🥺"):
+		return status + " Wants cuddles!"
+	case strings.Contains(status, "🙀"):
+		return status + " Hungry"
+	case strings.Contains(status, "😾"):
+		return status + " Tired"
+	case strings.Contains(status, "😿"):
+		return status + " Sad"
+	case strings.Contains(status, "🤢"):
+		return status + " Sick"
+	case strings.Contains(status, "🥱"):
+		return status + " Drowsy"
 	default:
-		return "😸 Happy"
+		return status + " Happy"
 	}
 }
 
