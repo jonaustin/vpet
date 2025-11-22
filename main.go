@@ -53,6 +53,15 @@ const (
 	goodCareThreshold    = 70
 	poorCareThreshold    = 40
 	neglectThreshold     = 20
+
+	// Autonomous behavior thresholds
+	autoSleepThreshold   = 20 // Energy level that triggers auto-sleep
+	drowsyThreshold      = 40 // Energy level that shows drowsy status
+	autoWakeEnergy       = 80 // Energy level to wake up automatically
+	minSleepDuration     = 6  // Minimum hours of auto-sleep
+	maxSleepDuration     = 8  // Maximum hours before forced wake
+	hungryThreshold      = 30 // Hunger level to show "wants food"
+	boredThreshold       = 30 // Happiness level to show "wants play"
 )
 
 // Pet forms for evolution system
@@ -72,6 +81,38 @@ const (
 )
 
 type PetForm int
+
+// Event types for the life events system
+type EventType string
+
+const (
+	EventNone           EventType = ""
+	EventChasing        EventType = "chasing"        // Chasing butterfly/bug
+	EventFoundSomething EventType = "found"          // Found a mystery item
+	EventScared         EventType = "scared"         // Scared of something
+	EventDaydreaming    EventType = "daydreaming"    // Lost in thought
+	EventAteSomething   EventType = "ate_something"  // Ate something questionable
+	EventSinging        EventType = "singing"        // Rare happy moment
+	EventNightmare      EventType = "nightmare"      // Bad dream while sleeping
+	EventLearnedTrick   EventType = "learned_trick"  // Achievement unlocked
+	EventZoomies        EventType = "zoomies"        // Sudden burst of energy
+	EventCuddles        EventType = "cuddles"        // Wants affection
+)
+
+// Event represents a life event happening to the pet
+type Event struct {
+	Type      EventType `json:"type"`
+	StartTime time.Time `json:"start_time"`
+	ExpiresAt time.Time `json:"expires_at"`
+	Responded bool      `json:"responded"` // Player has responded to this event
+}
+
+// EventLogEntry records past events for the pet's "memory"
+type EventLogEntry struct {
+	Type       EventType `json:"type"`
+	Time       time.Time `json:"time"`
+	WasIgnored bool      `json:"was_ignored"`
+}
 
 // CareQuality tracks average stats during a life stage
 type CareQuality struct {
@@ -101,6 +142,15 @@ type Pet struct {
 	Logs               []LogEntry             `json:"logs,omitempty"`
 	CareQualityHistory map[int]CareQuality    `json:"care_quality_history,omitempty"` // Tracks care per stage
 	StatCheckpoints    map[string][]StatCheck `json:"stat_checkpoints,omitempty"`     // For calculating averages
+
+	// Autonomous behavior fields
+	Mood          string     `json:"mood,omitempty"`            // "normal", "playful", "lazy", "needy"
+	MoodExpiresAt *time.Time `json:"mood_expires_at,omitempty"` // When current mood ends
+	AutoSleepTime *time.Time `json:"auto_sleep_time,omitempty"` // When pet fell asleep on its own
+
+	// Life events system
+	CurrentEvent *Event          `json:"current_event,omitempty"` // Active event, if any
+	EventLog     []EventLogEntry `json:"event_log,omitempty"`     // History of past events
 }
 
 // StatCheck records stats at a point in time for averaging
@@ -119,6 +169,8 @@ type model struct {
 	quitting           bool
 	showingAdoptPrompt bool
 	evolutionMessage   string
+	message            string    // Feedback message (refusal, action result, etc.)
+	messageExpires     time.Time // When to clear the message
 }
 
 // Evolution helper functions
@@ -291,31 +343,452 @@ func (m *model) administerMedicine() {
 	})
 }
 
+func (m *model) setMessage(msg string) {
+	m.message = msg
+	m.messageExpires = timeNow().Add(3 * time.Second)
+}
+
 func (m *model) feed() {
+	// Check if pet is too full
+	if m.pet.Hunger >= 90 {
+		m.setMessage("🍽️ Not hungry right now!")
+		return
+	}
+
 	m.modifyStats(func(p *Pet) {
 		p.Sleeping = false
+		// Clear auto-sleep time when woken by feeding
+		p.AutoSleepTime = nil
 		p.Hunger = min(p.Hunger+feedHungerIncrease, maxStat)
 		p.Happiness = min(p.Happiness+feedHappinessIncrease, maxStat)
 		log.Printf("Fed pet. Hunger is now %d, Happiness is now %d", p.Hunger, p.Happiness)
 	})
+	m.setMessage("🍖 Yum!")
 }
 
 // play increases happiness but decreases energy and hunger
 func (m *model) play() {
+	// Check if pet is too tired to play
+	if m.pet.Energy < autoSleepThreshold {
+		m.setMessage("😴 Too tired to play...")
+		return
+	}
+
+	// Check if pet is in lazy mood
+	if m.pet.Mood == "lazy" && m.pet.Energy < 50 {
+		m.setMessage("😪 Not in the mood to play...")
+		return
+	}
+
 	m.modifyStats(func(p *Pet) {
 		p.Sleeping = false
+		// Clear auto-sleep time when woken by playing
+		p.AutoSleepTime = nil
 		p.Happiness = min(p.Happiness+playHappinessIncrease, maxStat)
 		p.Energy = max(p.Energy-playEnergyDecrease, minStat)
 		p.Hunger = max(p.Hunger-playHungerDecrease, minStat)
 		log.Printf("Played with pet. Happiness is now %d, Energy is now %d, Hunger is now %d", p.Happiness, p.Energy, p.Hunger)
 	})
+
+	// Different messages based on mood
+	if m.pet.Mood == "playful" {
+		m.setMessage("🎉 So much fun!")
+	} else {
+		m.setMessage("🎾 Wheee!")
+	}
 }
 
 func (m *model) toggleSleep() {
 	m.modifyStats(func(p *Pet) {
 		p.Sleeping = !p.Sleeping
+		// Clear auto-sleep time if manually toggled
+		p.AutoSleepTime = nil
 		log.Printf("Pet is now sleeping: %t", p.Sleeping)
 	})
+}
+
+// applyAutonomousBehavior makes the pet act on its own based on current state
+func applyAutonomousBehavior(p *Pet) {
+	now := timeNow()
+
+	// Auto-sleep when exhausted
+	if p.Energy <= autoSleepThreshold && !p.Sleeping && !p.Dead {
+		p.Sleeping = true
+		p.AutoSleepTime = &now
+		log.Printf("Pet fell asleep automatically due to low energy (%d)", p.Energy)
+	}
+
+	// Auto-wake after sufficient sleep and energy restored
+	if p.Sleeping && p.AutoSleepTime != nil {
+		sleepDuration := now.Sub(*p.AutoSleepTime)
+		sleepHours := sleepDuration.Hours()
+
+		// Wake up if: slept minimum hours AND energy is restored, OR slept maximum hours
+		if (sleepHours >= minSleepDuration && p.Energy >= autoWakeEnergy) || sleepHours >= maxSleepDuration {
+			p.Sleeping = false
+			p.AutoSleepTime = nil
+			log.Printf("Pet woke up automatically after %.1f hours of sleep (Energy: %d)", sleepHours, p.Energy)
+		}
+	}
+
+	// Random mood changes
+	if p.Mood == "" {
+		p.Mood = "normal"
+	}
+	if p.MoodExpiresAt == nil || now.After(*p.MoodExpiresAt) {
+		// Mood influenced by current stats
+		var newMood string
+		roll := randFloat64()
+
+		if p.Energy < drowsyThreshold {
+			// Tired pets are more likely to be lazy
+			if roll < 0.6 {
+				newMood = "lazy"
+			} else if roll < 0.8 {
+				newMood = "needy"
+			} else {
+				newMood = "normal"
+			}
+		} else if p.Happiness < boredThreshold {
+			// Unhappy pets want attention
+			if roll < 0.5 {
+				newMood = "needy"
+			} else if roll < 0.7 {
+				newMood = "playful"
+			} else {
+				newMood = "normal"
+			}
+		} else if p.Hunger < hungryThreshold {
+			// Hungry pets are needy
+			if roll < 0.5 {
+				newMood = "needy"
+			} else {
+				newMood = "normal"
+			}
+		} else {
+			// Happy, fed, rested pet - random mood
+			if roll < 0.6 {
+				newMood = "normal"
+			} else if roll < 0.8 {
+				newMood = "playful"
+			} else if roll < 0.9 {
+				newMood = "lazy"
+			} else {
+				newMood = "needy"
+			}
+		}
+
+		p.Mood = newMood
+		// Mood lasts 2-4 hours
+		moodDuration := time.Duration(2+int(randFloat64()*2)) * time.Hour
+		expires := now.Add(moodDuration)
+		p.MoodExpiresAt = &expires
+		log.Printf("Pet mood changed to: %s (expires in %.1f hours)", newMood, moodDuration.Hours())
+	}
+}
+
+// eventDefinition describes an event's properties and conditions
+type eventDefinition struct {
+	Type        EventType
+	Emoji       string
+	Message     string
+	Duration    time.Duration
+	Condition   func(p *Pet) bool   // When can this event trigger?
+	OnIgnored   func(p *Pet)        // What happens if ignored?
+	OnResponded func(p *Pet) string // What happens when player responds? Returns message
+	Chance      float64             // Base probability per check (0-1)
+}
+
+// getEventDefinitions returns all possible events with their properties
+func getEventDefinitions() []eventDefinition {
+	return []eventDefinition{
+		{
+			Type:     EventChasing,
+			Emoji:    "🦋",
+			Message:  "chasing a butterfly!",
+			Duration: 10 * time.Minute,
+			Condition: func(p *Pet) bool {
+				return !p.Sleeping && p.Energy > 30 && (p.Mood == "playful" || p.Mood == "normal")
+			},
+			OnIgnored: func(p *Pet) {
+				// No penalty, butterfly flew away
+			},
+			OnResponded: func(p *Pet) string {
+				p.Happiness = min(p.Happiness+10, maxStat)
+				p.Energy = max(p.Energy-5, minStat)
+				return "🎉 You watched together! (+10 happiness)"
+			},
+			Chance: 0.15,
+		},
+		{
+			Type:     EventFoundSomething,
+			Emoji:    "🎁",
+			Message:  "found something interesting!",
+			Duration: 15 * time.Minute,
+			Condition: func(p *Pet) bool {
+				return !p.Sleeping && p.Energy > 20
+			},
+			OnIgnored: func(p *Pet) {
+				// 50% chance it was something bad
+				if randFloat64() < 0.5 {
+					p.Health = max(p.Health-10, minStat)
+				}
+			},
+			OnResponded: func(p *Pet) string {
+				roll := randFloat64()
+				if roll < 0.5 {
+					p.Happiness = min(p.Happiness+15, maxStat)
+					return "🧸 It was a fun toy! (+15 happiness)"
+				} else if roll < 0.8 {
+					p.Hunger = min(p.Hunger+20, maxStat)
+					return "🍪 It was a tasty treat! (+20 hunger)"
+				} else {
+					p.Health = max(p.Health-5, minStat)
+					return "🗑️ It was trash... you threw it away. (-5 health)"
+				}
+			},
+			Chance: 0.1,
+		},
+		{
+			Type:     EventScared,
+			Emoji:    "⚡",
+			Message:  "is scared of loud noises!",
+			Duration: 5 * time.Minute,
+			Condition: func(p *Pet) bool {
+				return !p.Sleeping && p.Happiness < 70
+			},
+			OnIgnored: func(p *Pet) {
+				p.Happiness = max(p.Happiness-15, minStat)
+			},
+			OnResponded: func(p *Pet) string {
+				p.Happiness = min(p.Happiness+20, maxStat)
+				return "🤗 You comforted them! (+20 happiness)"
+			},
+			Chance: 0.08,
+		},
+		{
+			Type:     EventDaydreaming,
+			Emoji:    "💭",
+			Message:  "is daydreaming...",
+			Duration: 8 * time.Minute,
+			Condition: func(p *Pet) bool {
+				return !p.Sleeping && p.Happiness > 50 && p.Energy > 40
+			},
+			OnIgnored: func(p *Pet) {
+				// No penalty
+			},
+			OnResponded: func(p *Pet) string {
+				thoughts := []string{
+					"💭 Dreaming about endless treats...",
+					"💭 Imagining a world of soft pillows...",
+					"💭 Thinking about that butterfly...",
+					"💭 Wondering what's beyond the window...",
+					"💭 Planning world domination (cutely)...",
+				}
+				return thoughts[int(randFloat64()*float64(len(thoughts)))]
+			},
+			Chance: 0.12,
+		},
+		{
+			Type:     EventAteSomething,
+			Emoji:    "🤢",
+			Message:  "ate something weird!",
+			Duration: 10 * time.Minute,
+			Condition: func(p *Pet) bool {
+				return !p.Sleeping && p.Hunger < 50
+			},
+			OnIgnored: func(p *Pet) {
+				p.Health = max(p.Health-20, minStat)
+				p.Illness = true
+			},
+			OnResponded: func(p *Pet) string {
+				p.Health = max(p.Health-5, minStat)
+				return "💊 You gave them medicine just in time! (-5 health only)"
+			},
+			Chance: 0.05,
+		},
+		{
+			Type:     EventSinging,
+			Emoji:    "🎵",
+			Message:  "is singing happily!",
+			Duration: 5 * time.Minute,
+			Condition: func(p *Pet) bool {
+				return !p.Sleeping && p.Happiness > 80 && p.Energy > 60
+			},
+			OnIgnored: func(p *Pet) {
+				// No penalty, rare happy moment
+			},
+			OnResponded: func(p *Pet) string {
+				p.Happiness = min(p.Happiness+5, maxStat)
+				return "🎶 You sang along! What a moment! (+5 happiness)"
+			},
+			Chance: 0.03, // Rare
+		},
+		{
+			Type:     EventNightmare,
+			Emoji:    "😰",
+			Message:  "is having a nightmare!",
+			Duration: 5 * time.Minute,
+			Condition: func(p *Pet) bool {
+				return p.Sleeping && p.Happiness < 60
+			},
+			OnIgnored: func(p *Pet) {
+				p.Happiness = max(p.Happiness-20, minStat)
+				p.Energy = max(p.Energy-10, minStat)
+			},
+			OnResponded: func(p *Pet) string {
+				p.Sleeping = false
+				p.AutoSleepTime = nil
+				p.Happiness = min(p.Happiness+10, maxStat)
+				return "🌙 You woke them gently. They feel safe now. (+10 happiness)"
+			},
+			Chance: 0.1,
+		},
+		{
+			Type:     EventZoomies,
+			Emoji:    "💨",
+			Message:  "has the zoomies!",
+			Duration: 3 * time.Minute,
+			Condition: func(p *Pet) bool {
+				return !p.Sleeping && p.Energy > 70 && p.Mood == "playful"
+			},
+			OnIgnored: func(p *Pet) {
+				p.Energy = max(p.Energy-15, minStat)
+				p.Happiness = min(p.Happiness+5, maxStat)
+			},
+			OnResponded: func(p *Pet) string {
+				p.Energy = max(p.Energy-20, minStat)
+				p.Happiness = min(p.Happiness+15, maxStat)
+				return "🏃 You joined in! Exhausting but fun! (+15 happiness, -20 energy)"
+			},
+			Chance: 0.1,
+		},
+		{
+			Type:     EventCuddles,
+			Emoji:    "🥺",
+			Message:  "wants cuddles!",
+			Duration: 10 * time.Minute,
+			Condition: func(p *Pet) bool {
+				return !p.Sleeping && p.Mood == "needy"
+			},
+			OnIgnored: func(p *Pet) {
+				p.Happiness = max(p.Happiness-10, minStat)
+			},
+			OnResponded: func(p *Pet) string {
+				p.Happiness = min(p.Happiness+25, maxStat)
+				p.Energy = min(p.Energy+5, maxStat)
+				return "💕 Cuddle time! So cozy! (+25 happiness, +5 energy)"
+			},
+			Chance: 0.12,
+		},
+	}
+}
+
+// getEventDefinition returns the definition for a given event type
+func getEventDefinition(eventType EventType) *eventDefinition {
+	for _, def := range getEventDefinitions() {
+		if def.Type == eventType {
+			return &def
+		}
+	}
+	return nil
+}
+
+// triggerRandomEvent attempts to trigger a random event based on conditions
+func triggerRandomEvent(p *Pet) {
+	now := timeNow()
+
+	// Don't trigger if there's already an active event
+	if p.CurrentEvent != nil && now.Before(p.CurrentEvent.ExpiresAt) {
+		return
+	}
+
+	// If there was an expired event that wasn't responded to, apply consequences
+	if p.CurrentEvent != nil && !p.CurrentEvent.Responded {
+		def := getEventDefinition(p.CurrentEvent.Type)
+		if def != nil && def.OnIgnored != nil {
+			def.OnIgnored(p)
+			log.Printf("Event %s was ignored, applying consequences", p.CurrentEvent.Type)
+		}
+		// Log the ignored event
+		p.EventLog = append(p.EventLog, EventLogEntry{
+			Type:       p.CurrentEvent.Type,
+			Time:       p.CurrentEvent.StartTime,
+			WasIgnored: true,
+		})
+		p.CurrentEvent = nil
+	}
+
+	// Dead pets don't get events
+	if p.Dead {
+		return
+	}
+
+	// Try to trigger a new event
+	definitions := getEventDefinitions()
+	for _, def := range definitions {
+		if def.Condition(p) && randFloat64() < def.Chance {
+			p.CurrentEvent = &Event{
+				Type:      def.Type,
+				StartTime: now,
+				ExpiresAt: now.Add(def.Duration),
+				Responded: false,
+			}
+			log.Printf("Event triggered: %s %s", def.Emoji, def.Message)
+			return // Only one event at a time
+		}
+	}
+}
+
+// respondToEvent handles the player responding to the current event
+func (p *Pet) respondToEvent() string {
+	if p.CurrentEvent == nil || p.CurrentEvent.Responded {
+		return ""
+	}
+
+	def := getEventDefinition(p.CurrentEvent.Type)
+	if def == nil {
+		return ""
+	}
+
+	var message string
+	if def.OnResponded != nil {
+		message = def.OnResponded(p)
+	}
+
+	p.CurrentEvent.Responded = true
+
+	// Log the responded event
+	p.EventLog = append(p.EventLog, EventLogEntry{
+		Type:       p.CurrentEvent.Type,
+		Time:       p.CurrentEvent.StartTime,
+		WasIgnored: false,
+	})
+
+	// Keep only last 20 events in log
+	if len(p.EventLog) > 20 {
+		p.EventLog = p.EventLog[len(p.EventLog)-20:]
+	}
+
+	return message
+}
+
+// getEventDisplay returns the display string for the current event
+func (p *Pet) getEventDisplay() (emoji, message string, hasEvent bool) {
+	if p.CurrentEvent == nil || timeNow().After(p.CurrentEvent.ExpiresAt) {
+		return "", "", false
+	}
+
+	def := getEventDefinition(p.CurrentEvent.Type)
+	if def == nil {
+		return "", "", false
+	}
+
+	if p.CurrentEvent.Responded {
+		return def.Emoji, "event completed", false
+	}
+
+	return def.Emoji, def.Message, true
 }
 
 func (m *model) updateHourlyStats(t time.Time) {
@@ -632,6 +1105,14 @@ func loadState() Pet {
 		pet.CauseOfDeath = "Old Age"
 	}
 
+	// Apply autonomous behavior (auto-sleep, auto-wake, mood changes)
+	if !pet.Dead {
+		applyAutonomousBehavior(&pet)
+	}
+
+	// Trigger random life events
+	triggerRandomEvent(&pet)
+
 	pet.LastSaved = now
 	return pet
 }
@@ -723,6 +1204,16 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.showingAdoptPrompt = false
 				return m, nil
 			}
+		case "e", "r":
+			// Respond to current event
+			if m.pet.CurrentEvent != nil && !m.pet.CurrentEvent.Responded {
+				result := m.pet.respondToEvent()
+				if result != "" {
+					m.setMessage(result)
+				}
+				saveState(&m.pet)
+				return m, nil
+			}
 		case "up", "k":
 			if m.choice > 0 {
 				m.choice--
@@ -777,26 +1268,67 @@ func (m model) View() string {
 	status := m.renderStatus()
 	menu := m.renderMenu()
 
+	// Show message if not expired
+	var messageView string
+	if m.message != "" && timeNow().Before(m.messageExpires) {
+		messageView = gameStyles.status.Render(m.message)
+	}
+
+	// Check for active event
+	var eventView string
+	emoji, eventMsg, hasEvent := m.pet.getEventDisplay()
+	if hasEvent {
+		eventView = gameStyles.title.Render(fmt.Sprintf("✨ %s %s %s ✨", emoji, m.pet.Name+" is "+eventMsg, emoji))
+	}
+
 	// Join all sections vertically
-	return lipgloss.JoinVertical(
-		lipgloss.Left,
+	sections := []string{
 		title,
 		"",
 		stats,
 		"",
 		status,
+	}
+
+	// Add event notification if present (before message)
+	if eventView != "" {
+		sections = append(sections, "", eventView, gameStyles.status.Render("Press [E] to respond!"))
+	}
+
+	// Add message if present
+	if messageView != "" {
+		sections = append(sections, "", messageView)
+	}
+
+	// Build help text
+	helpText := "Use arrows to move • enter to select • q to quit"
+	if hasEvent {
+		helpText = "[E] Respond to event • arrows to move • enter to select • q to quit"
+	}
+
+	sections = append(sections,
 		"",
 		menu,
 		"",
-		gameStyles.status.Render("Use arrows to move • enter to select • q to quit"),
+		gameStyles.status.Render(helpText),
 	)
+
+	return lipgloss.JoinVertical(lipgloss.Left, sections...)
 }
 
 func (m model) renderStats() string {
+	// Capitalize mood for display
+	mood := m.pet.Mood
+	if mood == "" {
+		mood = "normal"
+	}
+	moodDisplay := strings.ToUpper(mood[:1]) + mood[1:]
+
 	stats := []struct {
 		name, value string
 	}{
 		{"Form", m.pet.getFormName()},
+		{"Mood", moodDisplay},
 		{"Hunger", fmt.Sprintf("%d%%", m.pet.Hunger)},
 		{"Happiness", fmt.Sprintf("%d%%", m.pet.Happiness)},
 		{"Energy", fmt.Sprintf("%d%%", m.pet.Energy)},
@@ -890,7 +1422,28 @@ func getStatus(p Pet) string {
 		return "😴 Sleeping"
 	}
 
-	return "😸 Happy"
+	// Show drowsy warning when energy is getting low
+	if p.Energy < drowsyThreshold {
+		return "🥱 Drowsy"
+	}
+
+	// Show mood-based status when pet is generally happy
+	switch p.Mood {
+	case "playful":
+		return "🎾 Playful"
+	case "lazy":
+		return "😪 Lazy"
+	case "needy":
+		// Show what the pet wants based on lowest non-critical stat
+		if p.Hunger < p.Happiness && p.Hunger < p.Energy {
+			return "🍖 Wants Food"
+		} else if p.Happiness < p.Energy {
+			return "🎮 Wants Play"
+		}
+		return "🥺 Wants Attention"
+	default:
+		return "😸 Happy"
+	}
 }
 
 func displayStats(pet Pet) {
