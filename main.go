@@ -171,6 +171,8 @@ type model struct {
 	evolutionMessage   string
 	message            string    // Feedback message (refusal, action result, etc.)
 	messageExpires     time.Time // When to clear the message
+	inCheatMenu        bool      // Hidden cheat menu active
+	cheatChoice        int       // Selected cheat option
 }
 
 // Evolution helper functions
@@ -1184,10 +1186,43 @@ type tickMsg time.Time
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
+		// Handle cheat menu input
+		if m.inCheatMenu {
+			switch msg.String() {
+			case "ctrl+c", "q":
+				m.quitting = true
+				return m, tea.Quit
+			case "c", "esc":
+				m.inCheatMenu = false
+				return m, nil
+			case "up", "k":
+				if m.cheatChoice > 0 {
+					m.cheatChoice--
+				}
+			case "down", "j":
+				if m.cheatChoice < len(cheatMenuOptions)-1 {
+					m.cheatChoice++
+				}
+			case "enter", " ":
+				m.executeCheat()
+				if m.cheatChoice != 12 { // Not "Back"
+					return m, nil
+				}
+			}
+			return m, nil
+		}
+
 		switch msg.String() {
 		case "ctrl+c", "q":
 			m.quitting = true
 			return m, tea.Quit
+		case "c":
+			// Toggle cheat menu (hidden)
+			if !m.pet.Dead {
+				m.inCheatMenu = true
+				m.cheatChoice = 0
+				return m, nil
+			}
 		case "y":
 			// Handle adoption prompt
 			if m.pet.Dead && m.showingAdoptPrompt {
@@ -1259,6 +1294,9 @@ func (m model) View() string {
 	}
 	if m.quitting {
 		return "Thanks for playing!\n"
+	}
+	if m.inCheatMenu {
+		return m.renderCheatMenu()
 	}
 
 	// Build the view from components
@@ -1362,6 +1400,138 @@ func (m model) renderMenu() string {
 	}
 
 	return gameStyles.menuBox.Render(strings.Join(menuItems, "\n"))
+}
+
+// Cheat menu options
+var cheatMenuOptions = []string{
+	"Max All Stats",
+	"Min All Stats (Critical)",
+	"Full Energy",
+	"Empty Energy (Auto-sleep)",
+	"Mood: Normal",
+	"Mood: Playful",
+	"Mood: Lazy",
+	"Mood: Needy",
+	"Toggle Illness",
+	"Toggle Sleep",
+	"Age +24h",
+	"Kill Pet",
+	"Back",
+}
+
+func (m model) renderCheatMenu() string {
+	var menuItems []string
+	header := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(lipgloss.Color("#FF0000")).
+		Render("⚠️  CHEAT MENU ⚠️")
+
+	for i, choice := range cheatMenuOptions {
+		cursor := " "
+		if m.cheatChoice == i {
+			cursor = ">"
+		}
+		menuItems = append(menuItems, fmt.Sprintf("%s %s", cursor, choice))
+	}
+
+	return lipgloss.JoinVertical(lipgloss.Left,
+		header,
+		"",
+		gameStyles.menuBox.Render(strings.Join(menuItems, "\n")),
+		"",
+		gameStyles.status.Render("Press 'c' or Esc to exit"),
+	)
+}
+
+func (m *model) executeCheat() {
+	switch m.cheatChoice {
+	case 0: // Max All Stats
+		m.modifyStats(func(p *Pet) {
+			p.Hunger = maxStat
+			p.Happiness = maxStat
+			p.Energy = maxStat
+			p.Health = maxStat
+		})
+		m.setMessage("🎮 All stats maxed!")
+	case 1: // Min All Stats (Critical)
+		m.modifyStats(func(p *Pet) {
+			p.Hunger = 10
+			p.Happiness = 10
+			p.Energy = 10
+			p.Health = 10
+		})
+		m.setMessage("🎮 Stats set to critical!")
+	case 2: // Full Energy
+		m.modifyStats(func(p *Pet) {
+			p.Energy = maxStat
+		})
+		m.setMessage("🎮 Energy maxed!")
+	case 3: // Empty Energy (Auto-sleep)
+		m.modifyStats(func(p *Pet) {
+			p.Energy = 0
+		})
+		m.setMessage("🎮 Energy emptied!")
+	case 4: // Mood: Normal
+		m.modifyStats(func(p *Pet) {
+			p.Mood = "normal"
+			p.MoodExpiresAt = nil
+		})
+		m.setMessage("🎮 Mood set to normal")
+	case 5: // Mood: Playful
+		m.modifyStats(func(p *Pet) {
+			p.Mood = "playful"
+			p.MoodExpiresAt = nil
+		})
+		m.setMessage("🎮 Mood set to playful")
+	case 6: // Mood: Lazy
+		m.modifyStats(func(p *Pet) {
+			p.Mood = "lazy"
+			p.MoodExpiresAt = nil
+		})
+		m.setMessage("🎮 Mood set to lazy")
+	case 7: // Mood: Needy
+		m.modifyStats(func(p *Pet) {
+			p.Mood = "needy"
+			p.MoodExpiresAt = nil
+		})
+		m.setMessage("🎮 Mood set to needy")
+	case 8: // Toggle Illness
+		m.modifyStats(func(p *Pet) {
+			p.Illness = !p.Illness
+		})
+		if m.pet.Illness {
+			m.setMessage("🎮 Illness: ON")
+		} else {
+			m.setMessage("🎮 Illness: OFF")
+		}
+	case 9: // Toggle Sleep
+		m.modifyStats(func(p *Pet) {
+			p.Sleeping = !p.Sleeping
+			p.AutoSleepTime = nil
+		})
+		if m.pet.Sleeping {
+			m.setMessage("🎮 Pet is now sleeping")
+		} else {
+			m.setMessage("🎮 Pet is now awake")
+		}
+	case 10: // Age +24h
+		m.modifyStats(func(p *Pet) {
+			// Shift birth time back by 24 hours
+			if len(p.Logs) > 0 {
+				p.Logs[0].Time = p.Logs[0].Time.Add(-24 * time.Hour)
+			}
+		})
+		m.setMessage(fmt.Sprintf("🎮 Age advanced! Now %dh", m.pet.Age))
+	case 11: // Kill Pet
+		m.modifyStats(func(p *Pet) {
+			p.Dead = true
+			p.CauseOfDeath = "Cheats"
+		})
+		m.setMessage("🎮 Pet has been killed")
+		m.showingAdoptPrompt = true
+	case 12: // Back
+		m.inCheatMenu = false
+	}
 }
 
 func (m model) deadView() string {
