@@ -524,8 +524,7 @@ func loadState() Pet {
 	log.Printf("last saved: %s\n", pet.LastSaved.UTC())
 	elapsed := now.Sub(pet.LastSaved.UTC()) // Ensure UTC comparison
 	log.Printf("elapsed %f\n", elapsed.Seconds())
-	totalMinutes := int(elapsed.Minutes())
-	log.Printf("total minutes: %d\n", totalMinutes)
+	elapsedHours := elapsed.Hours()
 
 	// Store current status before updates
 	oldStatus := pet.LastStatus
@@ -563,22 +562,22 @@ func loadState() Pet {
 	if pet.Sleeping {
 		hungerRate = sleepingHungerRate
 	}
-	hungerLoss := (totalMinutes / 60) * hungerRate
+	hungerLoss := int(elapsedHours * float64(hungerRate))
 	pet.Hunger = max(pet.Hunger-hungerLoss, minStat)
 
 	if !pet.Sleeping {
-		// Energy decreases when awake
-		energyLoss := (totalMinutes / 120) * energyDecreaseRate
+		// Energy decreases when awake (every 2 hours)
+		energyLoss := int((elapsedHours / 2.0) * float64(energyDecreaseRate))
 		pet.Energy = max(pet.Energy-energyLoss, minStat)
 	} else {
 		// Energy recovers while sleeping
-		energyGain := (totalMinutes / 60) * energyRecoveryRate
+		energyGain := int(elapsedHours * float64(energyRecoveryRate))
 		pet.Energy = min(pet.Energy+energyGain, maxStat)
 	}
 
 	// Update happiness if stats are low
 	if pet.Hunger < lowStatThreshold || pet.Energy < lowStatThreshold {
-		happinessLoss := (totalMinutes / 60) * happinessDecreaseRate
+		happinessLoss := int(elapsedHours * float64(happinessDecreaseRate))
 		pet.Happiness = max(pet.Happiness-happinessLoss, minStat)
 	}
 
@@ -598,7 +597,7 @@ func loadState() Pet {
 		if pet.Sleeping {
 			healthRate = 1 // 1%/hr when sleeping
 		}
-		healthLoss := (totalMinutes / 60) * healthRate
+		healthLoss := int(elapsedHours * float64(healthRate))
 		pet.Health = max(pet.Health-healthLoss, minStat)
 	}
 
