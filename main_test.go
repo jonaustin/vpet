@@ -26,12 +26,22 @@ func setupTestFile(t *testing.T) func() {
 	}
 }
 
+// mockTimeNow sets a fixed time for deterministic tests and auto-restores after test
+func mockTimeNow(t *testing.T) time.Time {
+	originalTimeNow := timeNow
+	currentTime := time.Date(2024, 1, 1, 12, 0, 0, 0, time.Local)
+	timeNow = func() time.Time { return currentTime }
+	t.Cleanup(func() { timeNow = originalTimeNow })
+	return currentTime
+}
+
 func TestDeathConditions(t *testing.T) {
 	cleanup := setupTestFile(t)
 	defer cleanup()
 
+	currentTime := mockTimeNow(t)
+
 	// Create pet that has been critical for 13 hours (exceeds 12h threshold)
-	currentTime := time.Now().UTC()
 	criticalStart := currentTime.Add(-13 * time.Hour)
 	testCfg := &TestConfig{
 		InitialHunger:    lowStatThreshold - 1,
@@ -77,12 +87,13 @@ func TestNaturalDeathFromOldAge(t *testing.T) {
 	cleanup := setupTestFile(t)
 	defer cleanup()
 
+	currentTime := mockTimeNow(t)
+
 	// Save original randFloat64 and restore after test
 	originalRandFloat64 := randFloat64
 	defer func() { randFloat64 = originalRandFloat64 }()
 
 	// Create a healthy but old pet (168+ hours)
-	currentTime := time.Now().UTC()
 	birthTime := currentTime.Add(-200 * time.Hour)
 
 	testCfg := &TestConfig{
@@ -150,7 +161,7 @@ func TestDeathCausePriority(t *testing.T) {
 	cleanup := setupTestFile(t)
 	defer cleanup()
 
-	currentTime := time.Now().UTC()
+	currentTime := mockTimeNow(t)
 	criticalStart := currentTime.Add(-13 * time.Hour)
 
 	t.Run("Starvation takes priority over Sickness", func(t *testing.T) {
@@ -267,12 +278,7 @@ func TestCriticalStateRecovery(t *testing.T) {
 	cleanup := setupTestFile(t)
 	defer cleanup()
 
-	// Save current time.Now and restore after test
-	originalTimeNow := timeNow
-	defer func() { timeNow = originalTimeNow }()
-
-	currentTime := time.Now().UTC()
-	timeNow = func() time.Time { return currentTime }
+	currentTime := mockTimeNow(t)
 
 	// Create pet NOT in critical state initially
 	// We'll manually set CriticalStartTime to simulate it was in critical state before
@@ -401,13 +407,15 @@ func TestPetStatUpdates(t *testing.T) {
 	cleanup := setupTestFile(t)
 	defer cleanup()
 
+	currentTime := mockTimeNow(t)
+
 	testCfg := &TestConfig{
 		InitialHunger:    50,  // Start with lower hunger
 		InitialHappiness: 50,  // Start with lower happiness
 		InitialEnergy:    100, // Start with full energy
 		Health:           80,  // Start with suboptimal health
 		IsSleeping:       false,
-		LastSavedTime:    time.Now(),
+		LastSavedTime:    currentTime,
 		Illness:          true, // Start with illness
 	}
 	m := initialModel(testCfg)
@@ -478,13 +486,7 @@ func TestSleepingPetStaysAsleepAtFullEnergy(t *testing.T) {
 	cleanup := setupTestFile(t)
 	defer cleanup()
 
-	// Save current time.Now and restore after test
-	originalTimeNow := timeNow
-	defer func() { timeNow = originalTimeNow }()
-
-	// Set current time
-	currentTime := time.Now().UTC()
-	timeNow = func() time.Time { return currentTime }
+	currentTime := mockTimeNow(t)
 
 	// Create sleeping pet with low energy
 	oneHourAgo := currentTime.Add(-1 * time.Hour)
@@ -607,6 +609,8 @@ func TestIllnessSystem(t *testing.T) {
 	cleanup := setupTestFile(t)
 	defer cleanup()
 
+	currentTime := mockTimeNow(t)
+
 	t.Run("Develop illness", func(t *testing.T) {
 		// Force deterministic illness check
 		randFloat64 = func() float64 { return 0.05 } // Always < 0.1 illness threshold
@@ -654,7 +658,7 @@ func TestIllnessSystem(t *testing.T) {
 		testCfg := &TestConfig{
 			Health:        60,
 			Illness:       false,
-			LastSavedTime: time.Now().Add(-1 * time.Hour),
+			LastSavedTime: currentTime.Add(-1 * time.Hour),
 		}
 		pet := newPet(testCfg)
 		saveState(&pet)
@@ -670,7 +674,7 @@ func TestIllnessSystem(t *testing.T) {
 		testCfg := &TestConfig{
 			Health:        40,
 			Illness:       true,
-			LastSavedTime: time.Now().Add(-1 * time.Hour),
+			LastSavedTime: currentTime.Add(-1 * time.Hour),
 		}
 		pet := newPet(testCfg)
 		pet.Health = 60 // Set health to safe level
@@ -856,6 +860,8 @@ func TestNewPetLogging(t *testing.T) {
 	cleanup := setupTestFile(t)
 	defer cleanup()
 
+	currentTime := mockTimeNow(t)
+
 	pet := newPet(nil)
 
 	if len(pet.Logs) != 1 {
@@ -866,7 +872,7 @@ func TestNewPetLogging(t *testing.T) {
 	if firstLog.NewStatus != "😸" {
 		t.Errorf("Expected initial status '😸', got '%s'", firstLog.NewStatus)
 	}
-	if firstLog.Time.After(time.Now()) {
+	if firstLog.Time.After(currentTime) {
 		t.Error("Initial log time should not be in the future")
 	}
 }
@@ -1920,12 +1926,7 @@ func TestEvolution(t *testing.T) {
 	cleanup := setupTestFile(t)
 	defer cleanup()
 
-	// Save current time.Now and restore after test
-	originalTimeNow := timeNow
-	defer func() { timeNow = originalTimeNow }()
-
-	currentTime := time.Now().UTC()
-	timeNow = func() time.Time { return currentTime }
+	currentTime := mockTimeNow(t)
 
 	t.Run("Baby to Healthy Child with good care", func(t *testing.T) {
 		birthTime := currentTime.Add(-50 * time.Hour) // Just past child threshold
