@@ -85,6 +85,13 @@ echo $! > "$PID_FILE"
 # Ensure status updates frequently
 tmux set-option -g status-interval 5
 
+# Enable mouse support for clickable status
+tmux set-option -g mouse on
+
 # Bind prefix + P to show stats popup
 tmux bind-key P display-popup -E -w 60% -h 60% -xC -yC \
-    "cd ${VPET_DIR} && go run main.go -stats; echo '\nPress any key to close'; read -n 1"
+    "cd ${VPET_DIR} && go run main.go -stats"
+
+# Bind mouse click on status-left to show stats popup
+tmux bind-key -n MouseDown1StatusLeft display-popup -E -w 60% -h 60% -xC -yC \
+    "cd ${VPET_DIR} && go run main.go -stats"
