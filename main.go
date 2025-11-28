@@ -1898,8 +1898,9 @@ func max(a, b int) int {
 }
 
 func main() {
-	// Configure logging to write to ./vpet.log
-	logFile := "./vpet.log"
+	// Configure logging to write to config directory
+	configDir := filepath.Dir(getConfigPath())
+	logFile := filepath.Join(configDir, "vpet.log")
 	logFileHandle, err := os.OpenFile(logFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
 	if err != nil {
 		fmt.Println("Error opening log file:", err)
