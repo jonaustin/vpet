@@ -119,6 +119,13 @@ type Event struct {
 	Responded bool      `json:"responded"` // Player has responded to this event
 }
 
+// Trait represents a personality characteristic that affects pet behavior
+type Trait struct {
+	Name      string             `json:"name"`
+	Category  string             `json:"category"`  // "temperament", "appetite", "sociability", "constitution"
+	Modifiers map[string]float64 `json:"modifiers"` // stat_name -> multiplier (e.g., "hunger_decay": 1.2)
+}
+
 // EventLogEntry records past events for the pet's "memory"
 type EventLogEntry struct {
 	Type       EventType `json:"type"`
@@ -166,6 +173,9 @@ type Pet struct {
 
 	// Circadian rhythm
 	Chronotype string `json:"chronotype,omitempty"` // "early_bird", "normal", "night_owl"
+
+	// Personality traits
+	Traits []Trait `json:"traits,omitempty"` // Personality characteristics affecting behavior
 
 	// Fractional stat accumulators (to handle frequent small updates)
 	FractionalEnergy float64 `json:"fractional_energy,omitempty"` // Accumulated fractional energy gain
@@ -380,8 +390,13 @@ func (m *model) feed() {
 		// Clear auto-sleep time when woken by feeding
 		p.AutoSleepTime = nil
 		p.FractionalEnergy = 0 // Reset fractional accumulator when waking
-		p.Hunger = min(p.Hunger+feedHungerIncrease, maxStat)
-		p.Happiness = min(p.Happiness+feedHappinessIncrease, maxStat)
+
+		// Apply trait modifiers to feeding
+		hungerGain := int(float64(feedHungerIncrease) * p.getTraitModifier("feed_bonus"))
+		happinessGain := int(float64(feedHappinessIncrease) * p.getTraitModifier("feed_bonus_happiness"))
+
+		p.Hunger = min(p.Hunger+hungerGain, maxStat)
+		p.Happiness = min(p.Happiness+happinessGain, maxStat)
 		log.Printf("Fed pet. Hunger is now %d, Happiness is now %d", p.Hunger, p.Happiness)
 	})
 	m.setMessage("🍖 Yum!")
@@ -412,13 +427,16 @@ func (m *model) play() {
 		p.AutoSleepTime = nil
 		p.FractionalEnergy = 0 // Reset fractional accumulator when waking
 
-		// Apply happiness gain with chronotype multiplier
-		happinessGain := playHappinessIncrease
+		// Apply happiness gain with chronotype and trait multipliers
+		happinessGain := float64(playHappinessIncrease)
 		if !isActive {
 			// Reduced happiness outside active hours
-			happinessGain = int(float64(playHappinessIncrease) * outsideActiveHappinessMult)
+			happinessGain *= outsideActiveHappinessMult
 		}
-		p.Happiness = min(p.Happiness+happinessGain, maxStat)
+		// Apply trait modifier for play bonus
+		happinessGain *= p.getTraitModifier("play_bonus")
+
+		p.Happiness = min(p.Happiness+int(happinessGain), maxStat)
 		p.Energy = max(p.Energy-playEnergyDecrease, minStat)
 		p.Hunger = max(p.Hunger-playHungerDecrease, minStat)
 		log.Printf("Played with pet. Happiness is now %d, Energy is now %d, Hunger is now %d", p.Happiness, p.Energy, p.Hunger)
@@ -607,6 +625,109 @@ func assignRandomChronotype() string {
 		return ChronotypeNormal
 	}
 	return ChronotypeNightOwl
+}
+
+// generateTraits assigns random personality traits at birth
+func generateTraits() []Trait {
+	traitDefinitions := map[string][]Trait{
+		"temperament": {
+			{
+				Name:     "Calm",
+				Category: "temperament",
+				Modifiers: map[string]float64{
+					"energy_decay":    0.8,  // 20% slower energy drain
+					"happiness_decay": 0.85, // 15% slower happiness decay
+				},
+			},
+			{
+				Name:     "Hyperactive",
+				Category: "temperament",
+				Modifiers: map[string]float64{
+					"energy_decay": 1.3,  // 30% faster energy drain
+					"play_bonus":   1.25, // 25% more happiness from play
+				},
+			},
+		},
+		"appetite": {
+			{
+				Name:     "Picky",
+				Category: "appetite",
+				Modifiers: map[string]float64{
+					"feed_bonus": 0.75, // 25% less hunger gain from feeding
+				},
+			},
+			{
+				Name:     "Hungry",
+				Category: "appetite",
+				Modifiers: map[string]float64{
+					"hunger_decay": 1.2,  // 20% faster hunger decay
+					"feed_bonus":   1.25, // 25% more hunger gain from feeding
+				},
+			},
+		},
+		"sociability": {
+			{
+				Name:     "Independent",
+				Category: "sociability",
+				Modifiers: map[string]float64{
+					"happiness_decay": 0.75, // 25% slower happiness decay
+				},
+			},
+			{
+				Name:     "Needy",
+				Category: "sociability",
+				Modifiers: map[string]float64{
+					"happiness_decay": 1.15, // 15% faster happiness decay
+					"play_bonus":      1.2,  // 20% more happiness from play
+					"feed_bonus_happiness": 1.3, // 30% more happiness from feeding
+				},
+			},
+		},
+		"constitution": {
+			{
+				Name:     "Robust",
+				Category: "constitution",
+				Modifiers: map[string]float64{
+					"illness_chance": 0.5, // 50% less likely to get sick
+					"health_decay":   0.85, // 15% slower health decay
+				},
+			},
+			{
+				Name:     "Fragile",
+				Category: "constitution",
+				Modifiers: map[string]float64{
+					"illness_chance": 1.8, // 80% more likely to get sick
+					"health_decay":   1.2, // 20% faster health decay
+				},
+			},
+		},
+	}
+
+	var traits []Trait
+	for _, options := range traitDefinitions {
+		// Pick a random trait from each category
+		// Use modulo to ensure index is always valid (handles edge case where randFloat64() returns 1.0)
+		index := int(randFloat64() * float64(len(options)))
+		if index >= len(options) {
+			index = len(options) - 1
+		}
+		selectedTrait := options[index]
+		traits = append(traits, selectedTrait)
+		log.Printf("Assigned %s trait: %s", selectedTrait.Category, selectedTrait.Name)
+	}
+
+	return traits
+}
+
+// getTraitModifier returns the combined modifier for a given stat type
+func (p *Pet) getTraitModifier(modifierKey string) float64 {
+	multiplier := 1.0
+	for _, trait := range p.Traits {
+		if mod, exists := trait.Modifiers[modifierKey]; exists {
+			multiplier *= mod
+		}
+	}
+	return multiplier
 }
 
 // eventDefinition describes an event's properties and conditions
@@ -1064,6 +1185,11 @@ func newPet(testCfg *TestConfig) Pet {
 		log.Printf("Assigned chronotype: %s", getChronotypeName(pet.Chronotype))
 	}
 
+	// Assign random personality traits at birth
+	if len(pet.Traits) == 0 {
+		pet.Traits = generateTraits()
+	}
+
 	pet.LastStatus = getStatus(pet)
 	// Add initial log entry with birth time
 	pet.Logs = []LogEntry{{
@@ -1158,12 +1284,13 @@ func loadState() Pet {
 		return pet
 	}
 
-	// Calculate hunger decrease
-	hungerRate := hungerDecreaseRate
+	// Calculate hunger decrease with trait modifiers
+	hungerRate := float64(hungerDecreaseRate)
 	if pet.Sleeping {
-		hungerRate = sleepingHungerRate
+		hungerRate = float64(sleepingHungerRate)
 	}
-	hungerLoss := int(elapsedHours * float64(hungerRate))
+	hungerRate *= pet.getTraitModifier("hunger_decay")
+	hungerLoss := int(elapsedHours * hungerRate)
 	pet.Hunger = max(pet.Hunger-hungerLoss, minStat)
 
 	// Apply chronotype-based multipliers (use local time for user's actual hour)
@@ -1178,6 +1305,8 @@ func loadState() Pet {
 			// 50% faster energy drain outside active hours
 			energyMult = outsideActiveEnergyMult
 		}
+		// Apply trait modifier
+		energyMult *= pet.getTraitModifier("energy_decay")
 		energyLoss := int((elapsedHours / 2.0) * float64(energyDecreaseRate) * energyMult)
 		pet.Energy = max(pet.Energy-energyLoss, minStat)
 	} else {
@@ -1198,13 +1327,15 @@ func loadState() Pet {
 
 	// Update happiness if stats are low
 	if pet.Hunger < lowStatThreshold || pet.Energy < lowStatThreshold {
-		happinessLoss := int(elapsedHours * float64(happinessDecreaseRate))
+		happinessRate := float64(happinessDecreaseRate) * pet.getTraitModifier("happiness_decay")
+		happinessLoss := int(elapsedHours * happinessRate)
 		pet.Happiness = max(pet.Happiness-happinessLoss, minStat)
 	}
 
-	// Check for random illness when health is low
+	// Check for random illness when health is low (with trait modifier)
 	if pet.Health < 50 && !pet.Illness {
-		if randFloat64() < illnessChance {
+		adjustedIllnessChance := illnessChance * pet.getTraitModifier("illness_chance")
+		if randFloat64() < adjustedIllnessChance {
 			pet.Illness = true
 		}
 	} else if pet.Health >= 50 {
@@ -1212,13 +1343,14 @@ func loadState() Pet {
 		pet.Illness = false
 	}
 
-	// Health decreases when any stat is critically low
+	// Health decreases when any stat is critically low (with trait modifier)
 	if pet.Hunger < 15 || pet.Happiness < 15 || pet.Energy < 15 {
-		healthRate := 2 // 2%/hr when awake
+		healthRate := 2.0 // 2%/hr when awake
 		if pet.Sleeping {
-			healthRate = 1 // 1%/hr when sleeping
+			healthRate = 1.0 // 1%/hr when sleeping
 		}
-		healthLoss := int(elapsedHours * float64(healthRate))
+		healthRate *= pet.getTraitModifier("health_decay")
+		healthLoss := int(elapsedHours * healthRate)
 		pet.Health = max(pet.Health-healthLoss, minStat)
 	}
 
@@ -1514,11 +1646,22 @@ func (m model) renderStats() string {
 	wakeHour, sleepHour := getChronotypeSchedule(m.pet.Chronotype)
 	chronoDisplay := fmt.Sprintf("%s %s (%d:00-%d:00)", chronoEmoji, chronoName, wakeHour, sleepHour)
 
+	// Build trait display (just names, comma-separated)
+	var traitNames []string
+	for _, trait := range m.pet.Traits {
+		traitNames = append(traitNames, trait.Name)
+	}
+	traitDisplay := strings.Join(traitNames, ", ")
+	if traitDisplay == "" {
+		traitDisplay = "None"
+	}
+
 	stats := []struct {
 		name, value string
 	}{
 		{"Form", m.pet.getFormName()},
 		{"Type", chronoDisplay},
+		{"Traits", traitDisplay},
 		{"Mood", moodDisplay},
 		{"Hunger", fmt.Sprintf("%d%%", m.pet.Hunger)},
 		{"Happiness", fmt.Sprintf("%d%%", m.pet.Happiness)},
@@ -1888,12 +2031,23 @@ func (m statsModel) View() string {
 	wakeHour, sleepHour := getChronotypeSchedule(m.pet.Chronotype)
 	chronoDisplay := fmt.Sprintf("%s %s (%d:00-%d:00)", chronoEmoji, chronoName, wakeHour, sleepHour)
 
+	// Traits display
+	var traitNames []string
+	for _, trait := range m.pet.Traits {
+		traitNames = append(traitNames, trait.Name)
+	}
+	traitDisplay := strings.Join(traitNames, ", ")
+	if traitDisplay == "" {
+		traitDisplay = "None"
+	}
+
 	var s strings.Builder
 	s.WriteString("╔════════════════════════════════════╗\n")
 	s.WriteString(fmt.Sprintf("║  %s %s %s                  ║\n", formEmoji, m.pet.Name, formEmoji))
 	s.WriteString("╠════════════════════════════════════╣\n")
 	s.WriteString(fmt.Sprintf("║  Form:    %-24s ║\n", formName))
 	s.WriteString(fmt.Sprintf("║  Type:    %-24s ║\n", chronoDisplay))
+	s.WriteString(fmt.Sprintf("║  Traits:  %-24s ║\n", traitDisplay))
 	s.WriteString(fmt.Sprintf("║  Age:     %-24s ║\n", fmt.Sprintf("%d hours", m.pet.Age)))
 	s.WriteString(fmt.Sprintf("║  Status:  %-24s ║\n", status))
 	s.WriteString("║                                    ║\n")

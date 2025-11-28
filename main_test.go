@@ -219,6 +219,7 @@ func TestDeathCausePriority(t *testing.T) {
 		}
 		pet := newPet(testCfg)
 		pet.CriticalStartTime = &criticalStart
+		pet.Traits = []Trait{} // Clear traits for predictable test results
 		saveState(&pet)
 
 		// Fix LastSaved time in file
@@ -253,6 +254,7 @@ func TestDeathCausePriority(t *testing.T) {
 		}
 		pet := newPet(testCfg)
 		pet.CriticalStartTime = &criticalStart
+		pet.Traits = []Trait{} // Clear traits for predictable test results
 		saveState(&pet)
 
 		// Fix LastSaved time in file
@@ -565,6 +567,7 @@ func TestTimeBasedUpdates(t *testing.T) {
 	// Save initial state
 	pet := newPet(testCfg)
 	pet.Chronotype = ChronotypeNightOwl // Set chronotype where noon is in active hours (10am-2am)
+	pet.Traits = []Trait{}              // Clear traits for predictable test results
 	saveState(&pet)
 
 	// Fix the LastSaved time in the saved file
@@ -624,6 +627,7 @@ func TestIllnessSystem(t *testing.T) {
 			LastSavedTime: baseTime,
 		}
 		pet := newPet(testCfg)
+		pet.Traits = []Trait{} // Clear traits for predictable results
 		saveState(&pet)
 
 		// Load with exact 1 hour later time
@@ -1198,6 +1202,7 @@ func TestStatCalculationPrecision(t *testing.T) {
 		}
 		pet := newPet(testCfg)
 		pet.Chronotype = ChronotypeNightOwl // Noon is active hours for Night Owl
+		pet.Traits = []Trait{}              // Clear traits for predictable results
 		saveState(&pet)
 
 		// Fix LastSaved time in file
@@ -1312,6 +1317,7 @@ func TestStatCalculationPrecision(t *testing.T) {
 			LastSavedTime:    threeHoursAgo,
 		}
 		pet := newPet(testCfg)
+		pet.Traits = []Trait{} // Clear traits for predictable results
 		saveState(&pet)
 
 		// Fix LastSaved time in file
