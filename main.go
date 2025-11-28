@@ -1836,7 +1836,30 @@ func getStatusWithLabel(p Pet) string {
 	}
 }
 
-func displayStats(pet Pet) {
+// statsModel is a simple Bubble Tea model for displaying stats
+type statsModel struct {
+	pet Pet
+}
+
+func (m statsModel) Init() tea.Cmd {
+	return nil
+}
+
+func (m statsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		// Exit on any key press, including ESC
+		return m, tea.Quit
+	case tea.MouseMsg:
+		// Exit on any mouse button press (not just click, but press down)
+		if msg.Action == tea.MouseActionPress {
+			return m, tea.Quit
+		}
+	}
+	return m, nil
+}
+
+func (m statsModel) View() string {
 	// Helper function to create progress bar
 	makeBar := func(value int) string {
 		filled := value / 20 // 5 blocks for 100%
@@ -1851,36 +1874,47 @@ func displayStats(pet Pet) {
 		return bar
 	}
 
-	formEmoji := pet.getFormEmoji()
-	formName := pet.getFormName()
-	status := getStatus(pet)
+	formEmoji := m.pet.getFormEmoji()
+	formName := m.pet.getFormName()
+	status := getStatus(m.pet)
 	illnessStatus := "No"
-	if pet.Illness {
+	if m.pet.Illness {
 		illnessStatus = "Yes"
 	}
 
 	// Chronotype display
-	chronoEmoji := getChronotypeEmoji(pet.Chronotype)
-	chronoName := getChronotypeName(pet.Chronotype)
-	wakeHour, sleepHour := getChronotypeSchedule(pet.Chronotype)
+	chronoEmoji := getChronotypeEmoji(m.pet.Chronotype)
+	chronoName := getChronotypeName(m.pet.Chronotype)
+	wakeHour, sleepHour := getChronotypeSchedule(m.pet.Chronotype)
 	chronoDisplay := fmt.Sprintf("%s %s (%d:00-%d:00)", chronoEmoji, chronoName, wakeHour, sleepHour)
 
-	// Display formatted stats box
-	fmt.Println("╔════════════════════════════════════╗")
-	fmt.Printf("║  %s %s %s                  ║\n", formEmoji, pet.Name, formEmoji)
-	fmt.Println("╠════════════════════════════════════╣")
-	fmt.Printf("║  Form:    %-24s ║\n", formName)
-	fmt.Printf("║  Type:    %-24s ║\n", chronoDisplay)
-	fmt.Printf("║  Age:     %-24s ║\n", fmt.Sprintf("%d hours", pet.Age))
-	fmt.Printf("║  Status:  %-24s ║\n", status)
-	fmt.Println("║                                    ║")
-	fmt.Printf("║  Hunger:    [%s] %3d%%           ║\n", makeBar(pet.Hunger), pet.Hunger)
-	fmt.Printf("║  Happiness: [%s] %3d%%           ║\n", makeBar(pet.Happiness), pet.Happiness)
-	fmt.Printf("║  Energy:    [%s] %3d%%           ║\n", makeBar(pet.Energy), pet.Energy)
-	fmt.Printf("║  Health:    [%s] %3d%%           ║\n", makeBar(pet.Health), pet.Health)
-	fmt.Println("║                                    ║")
-	fmt.Printf("║  Illness:   %-23s║\n", illnessStatus)
-	fmt.Println("╚════════════════════════════════════╝")
+	var s strings.Builder
+	s.WriteString("╔════════════════════════════════════╗\n")
+	s.WriteString(fmt.Sprintf("║  %s %s %s                  ║\n", formEmoji, m.pet.Name, formEmoji))
+	s.WriteString("╠════════════════════════════════════╣\n")
+	s.WriteString(fmt.Sprintf("║  Form:    %-24s ║\n", formName))
+	s.WriteString(fmt.Sprintf("║  Type:    %-24s ║\n", chronoDisplay))
+	s.WriteString(fmt.Sprintf("║  Age:     %-24s ║\n", fmt.Sprintf("%d hours", m.pet.Age)))
+	s.WriteString(fmt.Sprintf("║  Status:  %-24s ║\n", status))
+	s.WriteString("║                                    ║\n")
+	s.WriteString(fmt.Sprintf("║  Hunger:    [%s] %3d%%           ║\n", makeBar(m.pet.Hunger), m.pet.Hunger))
+	s.WriteString(fmt.Sprintf("║  Happiness: [%s] %3d%%           ║\n", makeBar(m.pet.Happiness), m.pet.Happiness))
+	s.WriteString(fmt.Sprintf("║  Energy:    [%s] %3d%%           ║\n", makeBar(m.pet.Energy), m.pet.Energy))
+	s.WriteString(fmt.Sprintf("║  Health:    [%s] %3d%%           ║\n", makeBar(m.pet.Health), m.pet.Health))
+	s.WriteString("║                                    ║\n")
+	s.WriteString(fmt.Sprintf("║  Illness:   %-23s║\n", illnessStatus))
+	s.WriteString("╚════════════════════════════════════╝\n")
+	s.WriteString("\nPress ESC, click, or any key to close...")
+
+	return s.String()
+}
+
+func displayStats(pet Pet) {
+	p := tea.NewProgram(statsModel{pet: pet}, tea.WithAltScreen(), tea.WithMouseAllMotion())
+	if _, err := p.Run(); err != nil {
+		fmt.Printf("Error running stats display: %v\n", err)
+		os.Exit(1)
+	}
 }
 
 func min(a, b int) int {
