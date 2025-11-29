@@ -647,12 +647,14 @@ func TestIllnessSystem(t *testing.T) {
 			Illness: true,
 		}
 		m := initialModel(testCfg)
+		// Set bond to 100 for predictable medicine effectiveness
+		m.pet.Bond = 100
 		m.administerMedicine()
 
 		if m.pet.Illness {
 			t.Error("Medicine should cure illness")
 		}
-		if m.pet.Health != 70 { // 40 + 30 medicine effect
+		if m.pet.Health != 70 { // 40 + 30 medicine effect (at max bond)
 			t.Errorf("Expected health 70 after medicine, got %d", m.pet.Health)
 		}
 	})

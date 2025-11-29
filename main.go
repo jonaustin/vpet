@@ -67,6 +67,19 @@ const (
 	outsideActiveEnergyMult    = 1.5 // 50% faster energy drain outside active hours
 	outsideActiveHappinessMult = 0.7 // 30% less happiness gain outside active hours
 	preferredSleepRecoveryMult = 1.2 // 20% better sleep recovery during preferred hours
+
+	// Bonding system constants
+	maxBond                = 100          // Maximum bond level
+	initialBond            = 50           // Starting bond for new pets
+	bondDecayThreshold     = 24           // Hours before bond starts decaying from neglect
+	bondDecayRate          = 1            // Bond lost per 12 hours of neglect beyond threshold
+	spamPreventionWindow   = 1 * time.Hour // Time window to check for repeated actions
+	minBondMultiplier      = 0.5          // Action effectiveness at 0 bond
+	maxBondMultiplier      = 1.0          // Action effectiveness at 100 bond
+	bondGainWellTimed      = 2            // Bond gained for well-timed action
+	bondGainNormal         = 1            // Bond gained for normal action
+	illnessResistanceBond  = 70           // Bond level that starts reducing illness chance
+	maxInteractionHistory  = 20           // Keep last 20 interactions
 )
 
 // Chronotype constants
@@ -126,6 +139,12 @@ type Trait struct {
 	Modifiers map[string]float64 `json:"modifiers"` // stat_name -> multiplier (e.g., "hunger_decay": 1.2)
 }
 
+// Interaction represents a player action with the pet
+type Interaction struct {
+	Type string    `json:"type"` // "feed", "play", "medicine"
+	Time time.Time `json:"time"`
+}
+
 // EventLogEntry records past events for the pet's "memory"
 type EventLogEntry struct {
 	Type       EventType `json:"type"`
@@ -176,6 +195,10 @@ type Pet struct {
 
 	// Personality traits
 	Traits []Trait `json:"traits,omitempty"` // Personality characteristics affecting behavior
+
+	// Bonding system
+	Bond             int           `json:"bond,omitempty"`              // 0-100 relationship quality
+	LastInteractions []Interaction `json:"last_interactions,omitempty"` // Recent actions for spam detection
 
 	// Fractional stat accumulators (to handle frequent small updates)
 	FractionalEnergy float64 `json:"fractional_energy,omitempty"` // Accumulated fractional energy gain
@@ -368,8 +391,16 @@ func (m *model) modifyStats(f func(*Pet)) {
 func (m *model) administerMedicine() {
 	m.modifyStats(func(p *Pet) {
 		p.Illness = false
-		p.Health = min(p.Health+medicineEffect, maxStat)
-		log.Printf("Administered medicine. Health is now %d", p.Health)
+		// Bond multiplier affects medicine effectiveness
+		bondMultiplier := p.getBondMultiplier()
+		healthGain := int(float64(medicineEffect) * bondMultiplier)
+		p.Health = min(p.Health+healthGain, maxStat)
+
+		// Record interaction and increase bond for caring for sick pet
+		p.addInteraction("medicine")
+		p.updateBond(bondGainWellTimed) // Always well-timed when pet is sick
+
+		log.Printf("Administered medicine (bond mult: %.2f). Health is now %d", bondMultiplier, p.Health)
 	})
 }
 
@@ -385,19 +416,46 @@ func (m *model) feed() {
 		return
 	}
 
+	// Check for spam feeding
+	recentFeeds := countRecentInteractions(m.pet.LastInteractions, "feed", spamPreventionWindow)
+
 	m.modifyStats(func(p *Pet) {
 		p.Sleeping = false
 		// Clear auto-sleep time when woken by feeding
 		p.AutoSleepTime = nil
 		p.FractionalEnergy = 0 // Reset fractional accumulator when waking
 
+		// Calculate effectiveness with diminishing returns for spam
+		effectiveness := 1.0
+		if recentFeeds > 0 {
+			effectiveness = 1.0 / float64(recentFeeds+1) // 1.0, 0.5, 0.33, 0.25...
+		}
+
+		// Apply bond multiplier
+		bondMultiplier := p.getBondMultiplier()
+
 		// Apply trait modifiers to feeding
-		hungerGain := int(float64(feedHungerIncrease) * p.getTraitModifier("feed_bonus"))
-		happinessGain := int(float64(feedHappinessIncrease) * p.getTraitModifier("feed_bonus_happiness"))
+		hungerGain := int(float64(feedHungerIncrease) * p.getTraitModifier("feed_bonus") * effectiveness * bondMultiplier)
+		happinessGain := int(float64(feedHappinessIncrease) * p.getTraitModifier("feed_bonus_happiness") * effectiveness * bondMultiplier)
 
 		p.Hunger = min(p.Hunger+hungerGain, maxStat)
 		p.Happiness = min(p.Happiness+happinessGain, maxStat)
-		log.Printf("Fed pet. Hunger is now %d, Happiness is now %d", p.Hunger, p.Happiness)
+
+		// Record interaction
+		p.addInteraction("feed")
+
+		// Update bond
+		if recentFeeds == 0 && p.Hunger < 50 {
+			// Well-timed feeding (not spam, pet was hungry)
+			p.updateBond(bondGainWellTimed)
+		} else if recentFeeds == 0 {
+			// Normal feeding (not spam, but pet wasn't very hungry)
+			p.updateBond(bondGainNormal)
+		}
+		// No bond gain for spam feeding
+
+		log.Printf("Fed pet (effectiveness: %.2f, bond mult: %.2f). Hunger is now %d, Happiness is now %d",
+			effectiveness, bondMultiplier, p.Hunger, p.Happiness)
 	})
 	m.setMessage("🍖 Yum!")
 }
@@ -421,13 +479,25 @@ func (m *model) play() {
 	currentHour := timeNow().Local().Hour()
 	isActive := isActiveHours(&m.pet, currentHour)
 
+	// Check for spam playing
+	recentPlays := countRecentInteractions(m.pet.LastInteractions, "play", spamPreventionWindow)
+
 	m.modifyStats(func(p *Pet) {
 		p.Sleeping = false
 		// Clear auto-sleep time when woken by playing
 		p.AutoSleepTime = nil
 		p.FractionalEnergy = 0 // Reset fractional accumulator when waking
 
-		// Apply happiness gain with chronotype and trait multipliers
+		// Calculate effectiveness with diminishing returns for spam
+		effectiveness := 1.0
+		if recentPlays > 0 {
+			effectiveness = 1.0 / float64(recentPlays+1)
+		}
+
+		// Apply bond multiplier
+		bondMultiplier := p.getBondMultiplier()
+
+		// Apply happiness gain with chronotype, trait, bond, and spam multipliers
 		happinessGain := float64(playHappinessIncrease)
 		if !isActive {
 			// Reduced happiness outside active hours
@@ -435,11 +505,28 @@ func (m *model) play() {
 		}
 		// Apply trait modifier for play bonus
 		happinessGain *= p.getTraitModifier("play_bonus")
+		// Apply bond and effectiveness multipliers
+		happinessGain *= bondMultiplier * effectiveness
 
 		p.Happiness = min(p.Happiness+int(happinessGain), maxStat)
 		p.Energy = max(p.Energy-playEnergyDecrease, minStat)
 		p.Hunger = max(p.Hunger-playHungerDecrease, minStat)
-		log.Printf("Played with pet. Happiness is now %d, Energy is now %d, Hunger is now %d", p.Happiness, p.Energy, p.Hunger)
+
+		// Record interaction
+		p.addInteraction("play")
+
+		// Update bond
+		if recentPlays == 0 && p.Happiness < 50 {
+			// Well-timed play (not spam, pet was bored)
+			p.updateBond(bondGainWellTimed)
+		} else if recentPlays == 0 {
+			// Normal play (not spam, but pet wasn't very bored)
+			p.updateBond(bondGainNormal)
+		}
+		// No bond gain for spam playing
+
+		log.Printf("Played with pet (effectiveness: %.2f, bond mult: %.2f). Happiness is now %d, Energy is now %d, Hunger is now %d",
+			effectiveness, bondMultiplier, p.Happiness, p.Energy, p.Hunger)
 	})
 
 	// Different messages based on mood and time
@@ -728,6 +815,62 @@ func (p *Pet) getTraitModifier(modifierKey string) float64 {
 		}
 	}
 	return multiplier
+}
+
+// countRecentInteractions counts how many times an action occurred within a time window
+func countRecentInteractions(interactions []Interaction, actionType string, window time.Duration) int {
+	now := timeNow()
+	count := 0
+	for _, interaction := range interactions {
+		if interaction.Type == actionType && now.Sub(interaction.Time) < window {
+			count++
+		}
+	}
+	return count
+}
+
+// getBondMultiplier returns effectiveness multiplier based on bond level (0.5 to 1.0)
+func (p *Pet) getBondMultiplier() float64 {
+	// Linear scaling from minBondMultiplier at 0 bond to maxBondMultiplier at 100 bond
+	return minBondMultiplier + (float64(p.Bond)/float64(maxBond))*(maxBondMultiplier-minBondMultiplier)
+}
+
+// addInteraction records an interaction and maintains history limit
+func (p *Pet) addInteraction(actionType string) {
+	p.LastInteractions = append(p.LastInteractions, Interaction{
+		Type: actionType,
+		Time: timeNow(),
+	})
+	// Keep only recent interactions
+	if len(p.LastInteractions) > maxInteractionHistory {
+		p.LastInteractions = p.LastInteractions[len(p.LastInteractions)-maxInteractionHistory:]
+	}
+}
+
+// updateBond modifies bond level and clamps to valid range
+func (p *Pet) updateBond(change int) {
+	p.Bond = max(0, min(p.Bond+change, maxBond))
+	log.Printf("Bond changed by %d, now %d", change, p.Bond)
+}
+
+// getBondDescription returns a descriptive label for the bond level
+func getBondDescription(bond int) string {
+	switch {
+	case bond >= 90:
+		return "💕 Soulmates"
+	case bond >= 75:
+		return "❤️ Best Friends"
+	case bond >= 60:
+		return "💛 Close"
+	case bond >= 45:
+		return "💚 Friendly"
+	case bond >= 30:
+		return "💙 Acquaintances"
+	case bond >= 15:
+		return "🤍 Distant"
+	default:
+		return "💔 Estranged"
+	}
 }
 
 // eventDefinition describes an event's properties and conditions
@@ -1190,6 +1333,12 @@ func newPet(testCfg *TestConfig) Pet {
 		pet.Traits = generateTraits()
 	}
 
+	// Initialize bond for new pets
+	if pet.Bond == 0 {
+		pet.Bond = initialBond
+		log.Printf("Initialized bond at %d", initialBond)
+	}
+
 	pet.LastStatus = getStatus(pet)
 	// Add initial log entry with birth time
 	pet.Logs = []LogEntry{{
@@ -1332,9 +1481,36 @@ func loadState() Pet {
 		pet.Happiness = max(pet.Happiness-happinessLoss, minStat)
 	}
 
-	// Check for random illness when health is low (with trait modifier)
+	// Update bond from neglect or interactions
+	if len(pet.LastInteractions) > 0 {
+		// Find most recent interaction
+		var mostRecent time.Time
+		for _, interaction := range pet.LastInteractions {
+			if interaction.Time.After(mostRecent) {
+				mostRecent = interaction.Time
+			}
+		}
+		hoursSinceInteraction := now.Sub(mostRecent).Hours()
+
+		// Bond decays after bondDecayThreshold hours without interaction
+		if hoursSinceInteraction > bondDecayThreshold {
+			excessHours := hoursSinceInteraction - bondDecayThreshold
+			bondLoss := int(excessHours / 12) * bondDecayRate // -1 per 12 hours of neglect
+			if bondLoss > 0 {
+				pet.Bond = max(pet.Bond-bondLoss, 0)
+				log.Printf("Bond decreased by %d from neglect (%.1f hours since last interaction)", bondLoss, hoursSinceInteraction)
+			}
+		}
+	}
+
+	// Check for random illness when health is low (with trait and bond modifiers)
 	if pet.Health < 50 && !pet.Illness {
 		adjustedIllnessChance := illnessChance * pet.getTraitModifier("illness_chance")
+		// High bond reduces illness chance
+		if pet.Bond >= illnessResistanceBond {
+			bondReduction := 1.0 - (float64(pet.Bond-illnessResistanceBond) / float64(maxBond-illnessResistanceBond) * 0.5)
+			adjustedIllnessChance *= bondReduction
+		}
 		if randFloat64() < adjustedIllnessChance {
 			pet.Illness = true
 		}
@@ -1662,6 +1838,7 @@ func (m model) renderStats() string {
 		{"Form", m.pet.getFormName()},
 		{"Type", chronoDisplay},
 		{"Traits", traitDisplay},
+		{"Bond", getBondDescription(m.pet.Bond)},
 		{"Mood", moodDisplay},
 		{"Hunger", fmt.Sprintf("%d%%", m.pet.Hunger)},
 		{"Happiness", fmt.Sprintf("%d%%", m.pet.Happiness)},
@@ -2041,6 +2218,8 @@ func (m statsModel) View() string {
 		traitDisplay = "None"
 	}
 
+	bondDisplay := getBondDescription(m.pet.Bond)
+
 	var s strings.Builder
 	s.WriteString("╔════════════════════════════════════╗\n")
 	s.WriteString(fmt.Sprintf("║  %s %s %s                  ║\n", formEmoji, m.pet.Name, formEmoji))
@@ -2048,6 +2227,7 @@ func (m statsModel) View() string {
 	s.WriteString(fmt.Sprintf("║  Form:    %-24s ║\n", formName))
 	s.WriteString(fmt.Sprintf("║  Type:    %-24s ║\n", chronoDisplay))
 	s.WriteString(fmt.Sprintf("║  Traits:  %-24s ║\n", traitDisplay))
+	s.WriteString(fmt.Sprintf("║  Bond:    %-24s ║\n", bondDisplay))
 	s.WriteString(fmt.Sprintf("║  Age:     %-24s ║\n", fmt.Sprintf("%d hours", m.pet.Age)))
 	s.WriteString(fmt.Sprintf("║  Status:  %-24s ║\n", status))
 	s.WriteString("║                                    ║\n")
