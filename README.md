@@ -35,6 +35,12 @@ A Tamagotchi-style virtual pet that lives in your terminal with tmux integration
 - Sleep (Energy recovery)
 - Medicine (Cure sickness +30% Health)
 
+**Personality & Relationships**
+- Unique personality traits (temperament, appetite, sociability, constitution)
+- Bonding system: Build trust through consistent, timely care (0-100 bond level)
+- Bond affects action effectiveness (0.5x to 1.0x multiplier)
+- High bond reduces illness chance
+
 ## Evolution System
 
 Your pet evolves based on care quality at each life stage:
@@ -158,6 +164,70 @@ Moods change every 2-4 hours based on stats:
 - Tired pets → more likely to be lazy
 - Unhappy pets → more likely to be needy
 - Happy/rested pets → random mood
+
+## Personality Traits
+
+Each pet is born with unique personality traits that affect their behavior:
+
+### Trait Categories
+
+**Temperament** (affects energy/happiness)
+- **Calm**: Slower energy decay (-15%), easier to keep happy (+10% happiness from play)
+- **Hyperactive**: Faster energy decay (+15%), harder to keep happy (-10% happiness from play)
+
+**Appetite** (affects hunger/feeding)
+- **Hungry**: Faster hunger decay (+20%), more hunger gain from feeding (+20%)
+- **Picky**: Slower hunger decay (-20%), less hunger gain from feeding (-20%)
+
+**Sociability** (affects interaction spam prevention)
+- **Needy**: Shorter spam prevention window (30 min vs 60 min), wants more frequent interaction
+- **Independent**: Longer spam prevention window (90 min), prefers less frequent interaction
+
+**Constitution** (affects health/illness)
+- **Robust**: 50% lower illness chance when health is low
+- **Fragile**: 50% higher illness chance when health is low
+
+Traits are assigned randomly at birth and remain permanent for the pet's lifetime. They add variety and make each pet feel unique!
+
+## Bonding & Trust System
+
+Build a relationship with your pet through consistent, timely care. The bond level (0-100) affects how effective your actions are.
+
+### Bond Levels
+
+| Bond Range | Description | Emoji |
+|------------|-------------|-------|
+| 90-100 | 💕 Soulmates | Perfect trust |
+| 75-89 | ❤️ Best Friends | Strong bond |
+| 60-74 | 💛 Close | Good relationship |
+| 45-59 | 💚 Friendly | Neutral |
+| 30-44 | 💙 Acquaintances | Distant |
+| 15-29 | 🤍 Distant | Weak bond |
+| 0-14 | 💔 Estranged | Broken trust |
+
+### How Bond Works
+
+**Gaining Bond:**
+- **Well-timed actions** (+2 bond): Feeding when hunger <50%, playing when happiness <50%
+- **Normal actions** (+1 bond): Feeding/playing when stats are moderate
+- **Medicine** (+2 bond): Always well-timed when caring for sick pet
+- **No bond gain**: Spam feeding/playing (ignored by pet)
+
+**Losing Bond:**
+- **Neglect**: -1 bond per 12 hours after 24 hours without interaction
+- Bond cannot drop below 0
+
+**Bond Effects:**
+- **Action effectiveness**: 0.5x multiplier at bond 0, scaling linearly to 1.0x at bond 100
+  - Low bond (0): Feeding only gives 50% of normal hunger increase
+  - High bond (100): Feeding gives 100% of normal hunger increase
+- **Illness resistance**: At bond 70+, illness chance reduced by up to 50%
+
+**Tips:**
+- Interact regularly (at least once per day) to prevent bond decay
+- Feed/play when stats are low for well-timed bonuses
+- Medicine when sick always builds bond quickly
+- High bond makes all care actions more effective!
 
 ## Chronotypes
 
