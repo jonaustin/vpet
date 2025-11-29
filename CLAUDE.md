@@ -75,6 +75,8 @@ The app follows an immediate-save pattern:
 
 ### Testing Strategy
 
+ALWAYS add/update tests for new logic.
+
 **Time Mocking**
 - `timeNow` variable allows test control of current time
 - `randFloat64` variable allows deterministic illness testing
