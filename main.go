@@ -229,6 +229,32 @@ type model struct {
 	cheatChoice        int       // Selected cheat option
 }
 
+// ChaseTarget defines what the pet can chase
+type ChaseTarget struct {
+	Emoji string
+	Name  string
+	Speed int // Frames to move 1 position
+}
+
+// Available chase targets (extensible)
+var chaseTargets = map[string]ChaseTarget{
+	"butterfly": {Emoji: "🦋", Name: "butterfly", Speed: 3},
+	"ball":      {Emoji: "⚽", Name: "ball", Speed: 4},
+	"mouse":     {Emoji: "🐁", Name: "mouse", Speed: 2},
+}
+
+// chaseModel is the Bubble Tea model for chase animation
+type chaseModel struct {
+	pet       Pet
+	target    ChaseTarget
+	termWidth int
+	petPos    int
+	targetPos int
+	frame     int
+}
+
+type chaseAnimTickMsg time.Time
+
 // Evolution helper functions
 func (p *Pet) recordStatCheckpoint() {
 	if p.StatCheckpoints == nil {
@@ -2101,6 +2127,33 @@ func (m model) deadView() string {
 	)
 }
 
+// Chase animation helper functions
+func runChaseAnimation() {
+	pet := loadState()
+	target := chaseTargets["butterfly"]
+
+	model := chaseModel{
+		pet:       pet,
+		target:    target,
+		petPos:    0,
+		targetPos: 5, // Start ahead
+		frame:     0,
+		termWidth: 80, // Default, will be updated by WindowSizeMsg
+	}
+
+	p := tea.NewProgram(model, tea.WithAltScreen())
+	if _, err := p.Run(); err != nil {
+		log.Printf("Chase animation error: %v", err)
+		os.Exit(1)
+	}
+}
+
+func chaseAnimTick() tea.Cmd {
+	return tea.Tick(100*time.Millisecond, func(t time.Time) tea.Msg {
+		return chaseAnimTickMsg(t)
+	})
+}
+
 func getStatus(p Pet) string {
 	if p.Dead {
 		return "💀"
@@ -2303,6 +2356,91 @@ func (m statsModel) View() string {
 	return s.String()
 }
 
+// chaseModel Bubble Tea implementation
+func (m chaseModel) Init() tea.Cmd {
+	return tea.Batch(
+		chaseAnimTick(),
+		tea.EnterAltScreen,
+	)
+}
+
+func (m chaseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		// Exit on any key press
+		return m, tea.Quit
+
+	case tea.WindowSizeMsg:
+		// Handle terminal resize
+		m.termWidth = msg.Width
+		return m, nil
+
+	case chaseAnimTickMsg:
+		m.frame++
+
+		// Move target (butterfly) - moves every N frames based on speed
+		if m.frame%m.target.Speed == 0 {
+			m.targetPos++
+			// If target reached end, animation completes
+			if m.targetPos >= m.termWidth-2 {
+				return m, tea.Quit
+			}
+		}
+
+		// Move pet - slightly faster than target (every 2 frames)
+		if m.frame%2 == 0 {
+			// Only move if not too close (maintain chase distance)
+			if m.targetPos-m.petPos > 3 {
+				m.petPos++
+			}
+		}
+
+		return m, chaseAnimTick()
+	}
+
+	return m, nil
+}
+
+func (m chaseModel) View() string {
+	if m.termWidth == 0 {
+		return "Initializing..."
+	}
+
+	// Use active/chasing emoji for pet
+	petEmoji := "😸"
+
+	// Build animation line with pet and target at their positions
+	line := make([]rune, m.termWidth)
+	for i := 0; i < m.termWidth; i++ {
+		line[i] = ' '
+	}
+
+	// Place target (butterfly)
+	if m.targetPos < m.termWidth-2 {
+		targetRunes := []rune(m.target.Emoji)
+		for i, r := range targetRunes {
+			if m.targetPos+i < m.termWidth {
+				line[m.targetPos+i] = r
+			}
+		}
+	}
+
+	// Place pet
+	if m.petPos < m.termWidth-2 {
+		petRunes := []rune(petEmoji)
+		for i, r := range petRunes {
+			if m.petPos+i < m.termWidth {
+				line[m.petPos+i] = r
+			}
+		}
+	}
+
+	// Add instruction at bottom
+	instruction := "\n\nPress any key to exit"
+
+	return string(line) + instruction
+}
+
 func displayStats(pet Pet) {
 	p := tea.NewProgram(statsModel{pet: pet}, tea.WithAltScreen(), tea.WithMouseAllMotion())
 	if _, err := p.Run(); err != nil {
@@ -2340,6 +2478,7 @@ func main() {
 	updateOnly := flag.Bool("u", false, "Update pet stats only, don't run UI")
 	statusFlag := flag.Bool("status", false, "Output current status emoji")
 	statsFlag := flag.Bool("stats", false, "Display detailed pet statistics")
+	chaseFlag := flag.Bool("chase", false, "Watch your pet chase a butterfly")
 	flag.Parse()
 
 	if *statsFlag {
@@ -2357,6 +2496,11 @@ func main() {
 	if *updateOnly {
 		pet := loadState() // This already updates based on elapsed time
 		saveState(&pet)    // Save the updated stats
+		return
+	}
+
+	if *chaseFlag {
+		runChaseAnimation()
 		return
 	}
 
