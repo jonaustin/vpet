@@ -419,6 +419,9 @@ func (m *model) feed() {
 	// Check for spam feeding
 	recentFeeds := countRecentInteractions(m.pet.LastInteractions, "feed", spamPreventionWindow)
 
+	// Capture hunger BEFORE feeding to determine well-timed bonus
+	hungerBefore := m.pet.Hunger
+
 	m.modifyStats(func(p *Pet) {
 		p.Sleeping = false
 		// Clear auto-sleep time when woken by feeding
@@ -444,9 +447,9 @@ func (m *model) feed() {
 		// Record interaction
 		p.addInteraction("feed")
 
-		// Update bond
-		if recentFeeds == 0 && p.Hunger < 50 {
-			// Well-timed feeding (not spam, pet was hungry)
+		// Update bond based on hunger BEFORE feeding
+		if recentFeeds == 0 && hungerBefore < 50 {
+			// Well-timed feeding (not spam, pet was hungry before feeding)
 			p.updateBond(bondGainWellTimed)
 		} else if recentFeeds == 0 {
 			// Normal feeding (not spam, but pet wasn't very hungry)
@@ -482,6 +485,9 @@ func (m *model) play() {
 	// Check for spam playing
 	recentPlays := countRecentInteractions(m.pet.LastInteractions, "play", spamPreventionWindow)
 
+	// Capture happiness BEFORE playing to determine well-timed bonus
+	happinessBefore := m.pet.Happiness
+
 	m.modifyStats(func(p *Pet) {
 		p.Sleeping = false
 		// Clear auto-sleep time when woken by playing
@@ -515,9 +521,9 @@ func (m *model) play() {
 		// Record interaction
 		p.addInteraction("play")
 
-		// Update bond
-		if recentPlays == 0 && p.Happiness < 50 {
-			// Well-timed play (not spam, pet was bored)
+		// Update bond based on happiness BEFORE playing
+		if recentPlays == 0 && happinessBefore < 50 {
+			// Well-timed play (not spam, pet was bored before playing)
 			p.updateBond(bondGainWellTimed)
 		} else if recentPlays == 0 {
 			// Normal play (not spam, but pet wasn't very bored)

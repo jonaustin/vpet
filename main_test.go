@@ -2328,7 +2328,7 @@ func TestBondingSystem(t *testing.T) {
 
 	t.Run("Interaction history limited to maximum", func(t *testing.T) {
 		testCfg := &TestConfig{
-			InitialHunger:    50,
+			InitialHunger:    10, // Start very low so all feeds succeed
 			InitialHappiness: 50,
 			InitialEnergy:    50,
 			Health:           50,
@@ -2339,6 +2339,8 @@ func TestBondingSystem(t *testing.T) {
 		// Add more than maxInteractionHistory interactions
 		for i := 0; i < maxInteractionHistory + 5; i++ {
 			m.feed()
+			// Reset hunger after each feed to prevent refusal
+			m.pet.Hunger = 10
 		}
 
 		if len(m.pet.LastInteractions) > maxInteractionHistory {
