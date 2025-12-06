@@ -4,149 +4,178 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-vpet is a Tamagotchi-style virtual pet that lives in your terminal with tmux integration. It's a single-file Go application using the Bubble Tea TUI framework. The pet has lifecycle mechanics with aging, stats that decay over time, random illnesses, and multiple death conditions.
+vpet is a Tamagotchi-style virtual pet that lives in your terminal with tmux integration. It uses the Bubble Tea TUI framework. The pet has lifecycle mechanics with aging, stats that decay over time, random illnesses, and multiple death conditions.
 
 ## Development Commands
 
 ### Building and Running
 ```bash
 # Build the binary
-go build -o vpet main.go
+go build -o vpet .
 
 # Run interactive mode
-go run main.go
+go run .
 
 # Update stats without UI (used by tmux integration)
-go run main.go -u
+go run . -u
 
 # Get status emoji only
-go run main.go -status
+go run . -status
+
+# Display detailed stats
+go run . -stats
+
+# Watch pet chase a butterfly
+go run . -chase
 ```
 
 ### Testing
 ```bash
 # Run all tests
-go test -v
+go test ./...
+
+# Run with verbose output
+go test -v ./...
 
 # Run specific test
-go test -v -run TestName
+go test -v ./internal/pet -run TestName
 
 # Run tests with coverage
-go test -v -cover
+go test -v -cover ./...
 ```
 
 ## Architecture
 
-### Single-File Structure
-All code lives in `main.go`. The application is intentionally kept simple with no package separation.
+### Package Structure
 
-### Core Components
+```
+vpet/
+├── main.go                      # Entry point, flags, wiring
+├── internal/
+│   ├── pet/
+│   │   ├── pet.go               # Pet struct, stats, lifecycle, evolution
+│   │   ├── constants.go         # Decay rates, thresholds, form definitions
+│   │   ├── persistence.go       # Save/load JSON state, autonomous behavior
+│   │   ├── events.go            # Random events system
+│   │   ├── status.go            # GetStatus functions
+│   │   └── pet_test.go          # All pet-related tests
+│   ├── chase/
+│   │   └── chase.go             # Butterfly chase animation
+│   └── ui/
+│       ├── model.go             # Bubble Tea model, Update(), actions
+│       ├── view.go              # Rendering, cheat menu
+│       └── stats.go             # Stats display screen
+```
 
-**Pet State (`Pet` struct)**
+### Core Packages
+
+**pet/** - Core game logic
+- `Pet` struct with all state fields
+- `TimeNow` and `RandFloat64` vars for testing (mockable)
+- Lifecycle: aging, evolution, death
+- Traits, chronotypes, bond system
 - Persists to `~/.config/vpet/pet.json`
-- Tracks stats (Hunger, Happiness, Energy, Health), age, life stage, illness state
-- Records status transition logs for history tracking
-- Uses UTC timestamps throughout for consistency
 
-**Game Loop (`model` struct)**
-- Implements Bubble Tea's `tea.Model` interface
-- Handles keyboard input, stat updates, and rendering
-- Modifies stats through `modifyStats()` helper which saves immediately after each change
+**ui/** - Terminal UI
+- Bubble Tea `Model` implementation
+- User actions: feed, play, sleep, medicine
+- Rendering and cheat menu
+- Stats display screen
 
-**Time-Based Updates**
-- Stats decay based on elapsed time since `LastSaved`
-- Calculated in `loadState()` when reopening the app
-- `updateHourlyStats()` handles minute-by-minute decay during active sessions
-- **Critical**: All time operations use UTC via `timeNow()` variable (mockable for testing)
+**chase/** - Mini animation
+- Butterfly chase animation using Bubble Tea
+- Pet follows butterfly with 2D movement
+
+### Key Types and Functions
+
+**pet/pet.go**
+- `Pet` struct - all pet state
+- `TimeNow`, `RandFloat64` - mockable for tests
+- Evolution, traits, bond methods
+
+**pet/persistence.go**
+- `NewPet(*TestConfig)` - create pet
+- `LoadState()` - load from disk + apply time decay
+- `SaveState(*Pet)` - save to disk
+- `ApplyAutonomousBehavior(*Pet)` - auto-sleep/wake, mood
+
+**pet/events.go**
+- `TriggerRandomEvent(*Pet)` - random event system
+- `RespondToEvent()` - handle event interaction
+
+**ui/model.go**
+- `Model` struct - UI state
+- `feed()`, `play()`, `toggleSleep()`, `administerMedicine()`
+- `modifyStats(func(*Pet))` - modify + save pattern
 
 ### State Persistence Pattern
 
 The app follows an immediate-save pattern:
 1. User action (feed, play, etc.) calls a method like `feed()`
-2. Method calls `modifyStats(func(*Pet))` with stat changes
-3. `modifyStats()` applies changes and immediately calls `saveState()`
-4. `saveState()` updates `LastSaved`, calculates age from birth time in logs, tracks status transitions, and writes to JSON
-
-**Status Logging System**
-- Every `saveState()` call checks if pet's emoji status changed
-- If changed, appends `LogEntry{Time, OldStatus, NewStatus}` to `Pet.Logs`
-- Birth time is recorded as first log entry's timestamp
-- Age is calculated from birth time on each save: `now.Sub(birthTime).Hours()`
+2. Method calls `modifyStats(func(*pet.Pet))` with stat changes
+3. `modifyStats()` applies changes and immediately calls `pet.SaveState()`
+4. `SaveState()` updates `LastSaved`, calculates age, tracks status transitions, writes JSON
 
 ### Testing Strategy
 
 ALWAYS add/update tests for new logic.
 
 **Time Mocking**
-- `timeNow` variable allows test control of current time
-- `randFloat64` variable allows deterministic illness testing
+- `pet.TimeNow` variable allows test control of current time
+- `pet.RandFloat64` variable allows deterministic illness testing
 - Tests set exact timestamps and verify elapsed time calculations
 
 **File Isolation**
-- `testConfigPath` variable overrides config location
+- `pet.TestConfigPath` variable overrides config location
 - `setupTestFile(t)` creates temp directory, returns cleanup function
-- Tests manually manipulate JSON files to set exact `LastSaved` times
+
+**Test Helper**
+- `testModel` struct in pet_test.go replicates UI model behavior
+- Avoids circular dependency (pet tests can't import ui)
 
 **Test Pattern for Time-Based Logic**
 ```go
 // 1. Set fixed current time
-originalTimeNow := timeNow
-timeNow = func() time.Time { return fixedTime }
-defer func() { timeNow = originalTimeNow }()
+originalTimeNow := pet.TimeNow
+pet.TimeNow = func() time.Time { return fixedTime }
+defer func() { pet.TimeNow = originalTimeNow }()
 
 // 2. Create pet with past LastSaved
-pet := newPet(&TestConfig{LastSavedTime: pastTime})
-saveState(&pet)
+p := pet.NewPet(&pet.TestConfig{LastSavedTime: pastTime})
+pet.SaveState(&p)
 
-// 3. Manually fix LastSaved in JSON (saveState overwrites it)
-data, _ := os.ReadFile(testConfigPath)
-json.Unmarshal(data, &savedPet)
-savedPet.LastSaved = pastTime
-json.MarshalIndent(savedPet, "", "  ")
-os.WriteFile(testConfigPath, data, 0644)
+// 3. Manually fix LastSaved in JSON (SaveState overwrites it)
+// ... manipulate JSON file ...
 
 // 4. Load and verify calculations
-loadedPet := loadState()
-// Assert expected stat changes
+loadedPet := pet.LoadState()
 ```
 
 ### Key Mechanics
 
 **Aging and Life Stages**
-- Age increases based on elapsed hours in `loadState()` (line 312)
-- Life stages determined by age thresholds: 0-24h Baby, 24-48h Child, 48h+ Adult (lines 315-321)
-- Age calculation in `saveState()` uses birth time from first log entry (lines 408-411)
+- Age increases based on elapsed hours in `LoadState()`
+- Life stages: Baby (0-24h), Child (24-48h), Adult (48h+)
+- Evolution happens when life stage changes
 
 **Critical State and Death**
-- Pet enters critical state when Health ≤20, Hunger <10, Happiness <10, or Energy <10
+- Critical when Health ≤20, Hunger <10, Happiness <10, or Energy <10
 - `CriticalStartTime` tracks when critical state began
-- Death occurs after 4 hours in critical state (`deathTimeThreshold`)
+- Death after 4 hours in critical state (`DeathTimeThreshold`)
 - Natural death possible after 72 hours with increasing probability
-- Death causes: Neglect, Starvation, Sickness, Old Age
+- Causes: Neglect, Starvation, Sickness, Old Age
 
 **Illness System**
-- Random illness when Health <50 (10% chance per hour in `loadState()`)
+- Random illness when Health <50 (10% chance per hour)
 - Medicine cures illness and restores +30 Health
-- Illness auto-clears when Health ≥50
+- Auto-clears when Health ≥50
 
-**Stat Decay Rates** (defined in constants)
+**Stat Decay Rates** (in pet/constants.go)
 - Hunger: -5%/hr awake, -3%/hr sleeping
 - Energy: -5% per 2hrs awake, +10%/hr sleeping
 - Health: -2%/hr when any stat <30
 - Happiness: -2%/hr when Hunger or Energy <30
 
 **Tmux Integration**
-- `vpet.tmux` script runs `vpet -u` every 5 seconds in background
+- `vpet.tmux` script runs `vpet -u` every 5 seconds
 - Updates tmux `status-left` with emoji from `vpet -status`
-- PID tracked at `~/.config/vpet/tmux_update.pid`
-- **Note**: Requires updating `VPET_DIR` variable to match installation path
-
-### Important Code Locations
-
-- Constants and game configuration: lines 27-51
-- Pet state structure: lines 54-70
-- Stats modification pattern: lines 79-126
-- Time-based stat decay: lines 128-165, 328-400
-- State persistence: lines 275-443
-- Bubble Tea UI: lines 458-601
-- Status determination: lines 603-620

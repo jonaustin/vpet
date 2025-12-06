@@ -109,6 +109,15 @@ func (m *testModel) play() {
 			p.UpdateBond(BondGainNormal)
 		}
 	})
+
+	// Set success message based on conditions (matches ui/model.go play())
+	if !isActive {
+		m.message = "🥱 *yawn* ...play time..."
+	} else if m.pet.Mood == "playful" {
+		m.message = "🎉 So much fun!"
+	} else {
+		m.message = "🎾 Wheee!"
+	}
 }
 
 func (m *testModel) toggleSleep() {
