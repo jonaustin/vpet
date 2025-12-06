@@ -244,6 +244,11 @@ func TestDeathCausePriority(t *testing.T) {
 		cleanup() // Reset
 		cleanup = setupTestFile(t)
 
+		// Prevent random illness during the test (would change cause of death)
+		originalRandFloat64 := randFloat64
+		randFloat64 = func() float64 { return 1.0 }
+		defer func() { randFloat64 = originalRandFloat64 }()
+
 		testCfg := &TestConfig{
 			InitialHunger:    70, // High enough to not hit 0 (13*5=65 decrease)
 			InitialHappiness: 5,
@@ -286,10 +291,10 @@ func TestCriticalStateRecovery(t *testing.T) {
 	// We'll manually set CriticalStartTime to simulate it was in critical state before
 	twoHoursAgo := currentTime.Add(-2 * time.Hour)
 	testCfg := &TestConfig{
-		InitialHunger:    50,  // Above critical
-		InitialHappiness: 50,  // Above critical
-		InitialEnergy:    50,  // Above critical
-		Health:           50,  // Above critical
+		InitialHunger:    50, // Above critical
+		InitialHappiness: 50, // Above critical
+		InitialEnergy:    50, // Above critical
+		Health:           50, // Above critical
 		LastSavedTime:    twoHoursAgo,
 	}
 
@@ -743,6 +748,63 @@ func TestGetStatus(t *testing.T) {
 		}
 	})
 
+	t.Run("Want icon when hungry but not critical", func(t *testing.T) {
+		pet := newPet(nil)
+		pet.Hunger = 55 // Below 60 threshold but above critical
+		pet.Happiness = 90
+		pet.Energy = 90
+		if status := getStatus(pet); status != "😸🍖" {
+			t.Errorf("Expected 😸🍖 (wants food), got %s", status)
+		}
+	})
+
+	t.Run("Want icon prioritizes play need", func(t *testing.T) {
+		pet := newPet(nil)
+		pet.Hunger = 90    // Not hungry
+		pet.Happiness = 55 // Wants play
+		pet.Energy = 85
+		if status := getStatus(pet); status != "😸🎾" {
+			t.Errorf("Expected 😸🎾 (wants play), got %s", status)
+		}
+	})
+
+	t.Run("No rest want at mid energy", func(t *testing.T) {
+		pet := newPet(nil)
+		pet.Hunger = 90
+		pet.Happiness = 90
+		pet.Energy = 50 // Above rest-want trigger
+		if status := getStatus(pet); status != "😸" {
+			t.Errorf("Expected 😸 (no want), got %s", status)
+		}
+	})
+
+	t.Run("Rest want when low energy but not drowsy", func(t *testing.T) {
+		pet := newPet(nil)
+		pet.Hunger = 90
+		pet.Happiness = 90
+		pet.Energy = 45 // Triggers rest want, above drowsy threshold
+		if status := getStatus(pet); status != "😸🛌" {
+			t.Errorf("Expected 😸🛌 (wants rest), got %s", status)
+		}
+	})
+
+	t.Run("No want icon when sleeping", func(t *testing.T) {
+		pet := newPet(nil)
+		pet.Hunger = 55 // Would want food if awake
+		pet.Sleeping = true
+		if status := getStatus(pet); status != "😴" {
+			t.Errorf("Expected 😴 (sleeping, no wants), got %s", status)
+		}
+	})
+
+	t.Run("Critical need still shows feeling, not want", func(t *testing.T) {
+		pet := newPet(nil)
+		pet.Hunger = 20 // Critical
+		if status := getStatus(pet); status != "😸🙀" {
+			t.Errorf("Expected 😸🙀 (hungry critical), got %s", status)
+		}
+	})
+
 	t.Run("Event with critical stat", func(t *testing.T) {
 		currentTime := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
 		originalTimeNow := timeNow
@@ -914,10 +976,10 @@ func TestStatusLogging(t *testing.T) {
 			old string
 			new string
 		}{
-			{"", initialStatus},           // Initial status
-			{initialStatus, "😸🙀"},       // First change: awake + hungry
-			{"😸🙀", "😸😾"},              // Second change: awake + tired (lower than hungry)
-			{"😸😾", "😴"},                // Third change: sleeping, no critical stats
+			{"", initialStatus},   // Initial status
+			{initialStatus, "😸🙀"}, // First change: awake + hungry
+			{"😸🙀", "😸😾"},          // Second change: awake + tired (lower than hungry)
+			{"😸😾", "😴"},           // Third change: sleeping, no critical stats
 		}
 
 		for i, expected := range expectedStatuses {
@@ -1000,10 +1062,10 @@ func TestAging(t *testing.T) {
 			LastSavedTime: fiveHoursAgo,
 		}
 		pet := newPet(testCfg)
-		
+
 		// Set age directly to avoid double-counting
 		pet.Age = 0
-		
+
 		// Manually set the birth time in logs
 		pet.Logs = []LogEntry{{
 			Time:      fiveHoursAgo,
@@ -1063,27 +1125,27 @@ func TestAging(t *testing.T) {
 			t.Run(fmt.Sprintf("%d hours = %s", tc.hours, tc.stageName), func(t *testing.T) {
 				// Create a new pet with birth time set to the correct time in the past
 				birthTime := currentTime.Add(time.Duration(-tc.hours) * time.Hour)
-				
+
 				// Create a pet with LastSaved = birthTime (no elapsed time yet)
 				testCfg := &TestConfig{
 					LastSavedTime: birthTime,
 				}
 				pet := newPet(testCfg)
-				
+
 				// Reset age and life stage to ensure they're calculated correctly
 				pet.Age = 0
 				pet.LifeStage = 0
-				
+
 				// Set birth time in logs
 				pet.Logs = []LogEntry{{
 					Time:      birthTime,
 					OldStatus: "",
 					NewStatus: "😸 Happy",
 				}}
-				
+
 				// Save with these initial values
 				saveState(&pet)
-				
+
 				// Modify the saved file to ensure LastSaved is exactly at birth time
 				data, err := os.ReadFile(testConfigPath)
 				if err != nil {
@@ -1103,14 +1165,14 @@ func TestAging(t *testing.T) {
 				if err := os.WriteFile(testConfigPath, data, 0644); err != nil {
 					t.Fatalf("Failed to write test file: %v", err)
 				}
-				
+
 				// Now load the pet, which should calculate age based on elapsed time
 				loadedPet := loadState()
-				
+
 				if loadedPet.Age != tc.hours {
 					t.Errorf("Expected age %d, got %d", tc.hours, loadedPet.Age)
 				}
-				
+
 				if loadedPet.LifeStage != tc.expected {
 					t.Errorf("At %d hours: Expected life stage %d (%s), got %d",
 						tc.hours, tc.expected, tc.stageName, loadedPet.LifeStage)
@@ -1945,13 +2007,13 @@ func TestBondingSystem(t *testing.T) {
 
 	t.Run("Bond multiplier calculation", func(t *testing.T) {
 		testCases := []struct {
-			bond           int
-			expectedMin    float64
-			expectedMax    float64
+			bond        int
+			expectedMin float64
+			expectedMax float64
 		}{
-			{0, minBondMultiplier, minBondMultiplier + 0.01},      // 0.5
-			{50, 0.74, 0.76},                                       // 0.75
-			{100, maxBondMultiplier - 0.01, maxBondMultiplier},    // 1.0
+			{0, minBondMultiplier, minBondMultiplier + 0.01}, // 0.5
+			{50, 0.74, 0.76}, // 0.75
+			{100, maxBondMultiplier - 0.01, maxBondMultiplier}, // 1.0
 		}
 
 		for _, tc := range testCases {
@@ -2247,7 +2309,7 @@ func TestBondingSystem(t *testing.T) {
 			LastSavedTime:    oneHourAgo,
 		}
 		pet1 := newPet(testCfg1)
-		pet1.Bond = 30 // Below illness resistance threshold
+		pet1.Bond = 30          // Below illness resistance threshold
 		pet1.Traits = []Trait{} // Clear traits for predictable results
 		saveState(&pet1)
 
@@ -2337,7 +2399,7 @@ func TestBondingSystem(t *testing.T) {
 		m := initialModel(testCfg)
 
 		// Add more than maxInteractionHistory interactions
-		for i := 0; i < maxInteractionHistory + 5; i++ {
+		for i := 0; i < maxInteractionHistory+5; i++ {
 			m.feed()
 			// Reset hunger after each feed to prevent refusal
 			m.pet.Hunger = 10

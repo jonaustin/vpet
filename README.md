@@ -63,7 +63,7 @@ Baby (0-48h)
 ## Tmux Integration
 
 ### Status Display
-The tmux status shows two icons: **Activity** + **Feeling**
+The tmux status shows two icons: **Activity** + **Need** (critical "feelings" or non-critical "wants")
 
 **Activity Icons (what pet is doing):**
 | Icon | Meaning |
@@ -80,7 +80,7 @@ The tmux status shows two icons: **Activity** + **Feeling**
 | 🥺 | Wants cuddles |
 | 🤢 | Ate something weird |
 
-**Feeling Icons (critical needs):**
+**Need Icons (critical needs or wants):**
 | Icon | Meaning |
 |------|---------|
 | 🙀 | Hungry (<30%) |
@@ -88,6 +88,9 @@ The tmux status shows two icons: **Activity** + **Feeling**
 | 😿 | Sad (<30%) |
 | 🤢 | Sick (<30%) |
 | 🥱 | Drowsy (30-40% energy) |
+| 🍖 | Wants food (not critical but hungry) |
+| 🎾 | Wants play/attention (not critical but bored) |
+| 🛌 | Wants rest (not critical but low energy) |
 | (none) | All is well |
 | 💀 | Dead |
 

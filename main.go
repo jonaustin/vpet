@@ -55,13 +55,16 @@ const (
 	neglectThreshold     = 20
 
 	// Autonomous behavior thresholds
-	autoSleepThreshold   = 20 // Energy level that triggers auto-sleep
-	drowsyThreshold      = 40 // Energy level that shows drowsy status
-	autoWakeEnergy       = 80 // Energy level to wake up automatically
-	minSleepDuration     = 6  // Minimum hours of auto-sleep
-	maxSleepDuration     = 8  // Maximum hours before forced wake
-	hungryThreshold      = 30 // Hunger level to show "wants food"
-	boredThreshold       = 30 // Happiness level to show "wants play"
+	autoSleepThreshold  = 20 // Energy level that triggers auto-sleep
+	drowsyThreshold     = 40 // Energy level that shows drowsy status
+	wantHungerThreshold = 40 // Hunger deficit to show 🍖 want (Hunger <= 60)
+	wantHappyThreshold  = 40 // Happiness deficit to show 🎾 want (Happiness <= 60)
+	wantEnergyThreshold = 55 // Energy deficit to show 🛌 want (Energy <= 45)
+	autoWakeEnergy      = 80 // Energy level to wake up automatically
+	minSleepDuration    = 6  // Minimum hours of auto-sleep
+	maxSleepDuration    = 8  // Maximum hours before forced wake
+	hungryThreshold     = 30 // Hunger level to show "wants food"
+	boredThreshold      = 30 // Happiness level to show "wants play"
 
 	// Chronotype multipliers
 	outsideActiveEnergyMult    = 1.5 // 50% faster energy drain outside active hours
@@ -69,17 +72,17 @@ const (
 	preferredSleepRecoveryMult = 1.2 // 20% better sleep recovery during preferred hours
 
 	// Bonding system constants
-	maxBond                = 100          // Maximum bond level
-	initialBond            = 50           // Starting bond for new pets
-	bondDecayThreshold     = 24           // Hours before bond starts decaying from neglect
-	bondDecayRate          = 1            // Bond lost per 12 hours of neglect beyond threshold
-	spamPreventionWindow   = 1 * time.Hour // Time window to check for repeated actions
-	minBondMultiplier      = 0.5          // Action effectiveness at 0 bond
-	maxBondMultiplier      = 1.0          // Action effectiveness at 100 bond
-	bondGainWellTimed      = 2            // Bond gained for well-timed action
-	bondGainNormal         = 1            // Bond gained for normal action
-	illnessResistanceBond  = 70           // Bond level that starts reducing illness chance
-	maxInteractionHistory  = 20           // Keep last 20 interactions
+	maxBond               = 100           // Maximum bond level
+	initialBond           = 50            // Starting bond for new pets
+	bondDecayThreshold    = 24            // Hours before bond starts decaying from neglect
+	bondDecayRate         = 1             // Bond lost per 12 hours of neglect beyond threshold
+	spamPreventionWindow  = 1 * time.Hour // Time window to check for repeated actions
+	minBondMultiplier     = 0.5           // Action effectiveness at 0 bond
+	maxBondMultiplier     = 1.0           // Action effectiveness at 100 bond
+	bondGainWellTimed     = 2             // Bond gained for well-timed action
+	bondGainNormal        = 1             // Bond gained for normal action
+	illnessResistanceBond = 70            // Bond level that starts reducing illness chance
+	maxInteractionHistory = 20            // Keep last 20 interactions
 )
 
 // Chronotype constants
@@ -112,16 +115,16 @@ type EventType string
 
 const (
 	EventNone           EventType = ""
-	EventChasing        EventType = "chasing"        // Chasing butterfly/bug
-	EventFoundSomething EventType = "found"          // Found a mystery item
-	EventScared         EventType = "scared"         // Scared of something
-	EventDaydreaming    EventType = "daydreaming"    // Lost in thought
-	EventAteSomething   EventType = "ate_something"  // Ate something questionable
-	EventSinging        EventType = "singing"        // Rare happy moment
-	EventNightmare      EventType = "nightmare"      // Bad dream while sleeping
-	EventLearnedTrick   EventType = "learned_trick"  // Achievement unlocked
-	EventZoomies        EventType = "zoomies"        // Sudden burst of energy
-	EventCuddles        EventType = "cuddles"        // Wants affection
+	EventChasing        EventType = "chasing"       // Chasing butterfly/bug
+	EventFoundSomething EventType = "found"         // Found a mystery item
+	EventScared         EventType = "scared"        // Scared of something
+	EventDaydreaming    EventType = "daydreaming"   // Lost in thought
+	EventAteSomething   EventType = "ate_something" // Ate something questionable
+	EventSinging        EventType = "singing"       // Rare happy moment
+	EventNightmare      EventType = "nightmare"     // Bad dream while sleeping
+	EventLearnedTrick   EventType = "learned_trick" // Achievement unlocked
+	EventZoomies        EventType = "zoomies"       // Sudden burst of energy
+	EventCuddles        EventType = "cuddles"       // Wants affection
 )
 
 // Event represents a life event happening to the pet
@@ -325,6 +328,46 @@ func (p *Pet) evolve(newStage int) {
 	}
 
 	log.Printf("Pet evolved to %s (care quality: %d%%)", p.getFormName(), avgCare)
+}
+
+// getWantEmoji returns an icon for the pet's most pressing desire when idle (non-critical)
+func getWantEmoji(p Pet) string {
+	// Skip wants if pet can't express them
+	if p.Dead || p.Sleeping {
+		return ""
+	}
+
+	// If an event is active, status is driven by the event instead
+	if p.CurrentEvent != nil && !p.CurrentEvent.Responded && timeNow().Before(p.CurrentEvent.ExpiresAt) {
+		return ""
+	}
+
+	// Determine deficits for primary needs
+	type need struct {
+		deficit   int
+		emoji     string
+		threshold int
+	}
+
+	needs := []need{
+		{deficit: maxStat - p.Hunger, emoji: "🍖", threshold: wantHungerThreshold},
+		{deficit: maxStat - p.Happiness, emoji: "🎾", threshold: wantHappyThreshold},
+		{deficit: maxStat - p.Energy, emoji: "🛌", threshold: wantEnergyThreshold},
+	}
+
+	// Pick the need with the largest deficit above its threshold
+	best := need{deficit: 0}
+	for _, n := range needs {
+		if n.deficit >= n.threshold && n.deficit > best.deficit {
+			best = n
+		}
+	}
+
+	if best.deficit > 0 {
+		return best.emoji
+	}
+
+	return ""
 }
 
 func (p *Pet) getFormName() string {
@@ -770,9 +813,9 @@ func generateTraits() []Trait {
 				Name:     "Needy",
 				Category: "sociability",
 				Modifiers: map[string]float64{
-					"happiness_decay": 1.15, // 15% faster happiness decay
-					"play_bonus":      1.2,  // 20% more happiness from play
-					"feed_bonus_happiness": 1.3, // 30% more happiness from feeding
+					"happiness_decay":      1.15, // 15% faster happiness decay
+					"play_bonus":           1.2,  // 20% more happiness from play
+					"feed_bonus_happiness": 1.3,  // 30% more happiness from feeding
 				},
 			},
 		},
@@ -781,7 +824,7 @@ func generateTraits() []Trait {
 				Name:     "Robust",
 				Category: "constitution",
 				Modifiers: map[string]float64{
-					"illness_chance": 0.5, // 50% less likely to get sick
+					"illness_chance": 0.5,  // 50% less likely to get sick
 					"health_decay":   0.85, // 15% slower health decay
 				},
 			},
@@ -1501,7 +1544,7 @@ func loadState() Pet {
 		// Bond decays after bondDecayThreshold hours without interaction
 		if hoursSinceInteraction > bondDecayThreshold {
 			excessHours := hoursSinceInteraction - bondDecayThreshold
-			bondLoss := int(excessHours / 12) * bondDecayRate // -1 per 12 hours of neglect
+			bondLoss := int(excessHours/12) * bondDecayRate // -1 per 12 hours of neglect
 			if bondLoss > 0 {
 				pet.Bond = max(pet.Bond-bondLoss, 0)
 				log.Printf("Bond decreased by %d from neglect (%.1f hours since last interaction)", bondLoss, hoursSinceInteraction)
@@ -2111,6 +2154,13 @@ func getStatus(p Pet) string {
 		feeling = "🥱"
 	}
 	// Otherwise feeling stays empty (all is well)
+
+	// If no critical feeling, show the most pressing want (attention-seeking)
+	if feeling == "" {
+		if want := getWantEmoji(p); want != "" {
+			return activity + want
+		}
+	}
 
 	return activity + feeling
 }
