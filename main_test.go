@@ -2736,3 +2736,129 @@ func TestEvolution(t *testing.T) {
 		}
 	})
 }
+
+func TestStatusLabelSleepingWithLowEnergy(t *testing.T) {
+	cleanup := setupTestFile(t)
+	defer cleanup()
+	mockTimeNow(t)
+
+	t.Run("Sleeping with low energy should not show 'needs care'", func(t *testing.T) {
+		testCfg := &TestConfig{
+			InitialHunger:    80,
+			InitialHappiness: 80,
+			InitialEnergy:    25, // Low energy (< 30, so shows 😾)
+			Health:           80,
+			IsSleeping:       true,
+			LastSavedTime:    timeNow(),
+		}
+		pet := newPet(testCfg)
+
+		// Status should be "😴😾" (sleeping + tired)
+		status := getStatus(pet)
+		if status != "😴😾" {
+			t.Errorf("Expected status '😴😾', got '%s'", status)
+		}
+
+		// Label should be "😴😾 Sleeping" (NOT "needs care")
+		label := getStatusWithLabel(pet)
+		if label != "😴😾 Sleeping" {
+			t.Errorf("Expected label '😴😾 Sleeping', got '%s'", label)
+		}
+	})
+
+	t.Run("Sleeping with low hunger should show 'needs care'", func(t *testing.T) {
+		testCfg := &TestConfig{
+			InitialHunger:    25, // Low hunger (< 30, so shows 🙀)
+			InitialHappiness: 80,
+			InitialEnergy:    80,
+			Health:           80,
+			IsSleeping:       true,
+			LastSavedTime:    timeNow(),
+		}
+		pet := newPet(testCfg)
+
+		// Status should be "😴🙀" (sleeping + hungry)
+		status := getStatus(pet)
+		if status != "😴🙀" {
+			t.Errorf("Expected status '😴🙀', got '%s'", status)
+		}
+
+		// Label should show "(needs care)" because sleeping doesn't fix hunger
+		label := getStatusWithLabel(pet)
+		if label != "😴🙀 Sleeping (needs care)" {
+			t.Errorf("Expected label '😴🙀 Sleeping (needs care)', got '%s'", label)
+		}
+	})
+
+	t.Run("Sleeping with low happiness should show 'needs care'", func(t *testing.T) {
+		testCfg := &TestConfig{
+			InitialHunger:    80,
+			InitialHappiness: 25, // Low happiness (< 30, so shows 😿)
+			InitialEnergy:    80,
+			Health:           80,
+			IsSleeping:       true,
+			LastSavedTime:    timeNow(),
+		}
+		pet := newPet(testCfg)
+
+		// Status should be "😴😿" (sleeping + sad)
+		status := getStatus(pet)
+		if status != "😴😿" {
+			t.Errorf("Expected status '😴😿', got '%s'", status)
+		}
+
+		// Label should show "(needs care)" because sleeping doesn't fix happiness
+		label := getStatusWithLabel(pet)
+		if label != "😴😿 Sleeping (needs care)" {
+			t.Errorf("Expected label '😴😿 Sleeping (needs care)', got '%s'", label)
+		}
+	})
+
+	t.Run("Sleeping with low health should show 'needs care'", func(t *testing.T) {
+		testCfg := &TestConfig{
+			InitialHunger:    80,
+			InitialHappiness: 80,
+			InitialEnergy:    80,
+			Health:           25, // Low health (< 30, so shows 🤢)
+			IsSleeping:       true,
+			LastSavedTime:    timeNow(),
+		}
+		pet := newPet(testCfg)
+
+		// Status should be "😴🤢" (sleeping + sick)
+		status := getStatus(pet)
+		if status != "😴🤢" {
+			t.Errorf("Expected status '😴🤢', got '%s'", status)
+		}
+
+		// Label should show "(needs care)" because sleeping doesn't fix health
+		label := getStatusWithLabel(pet)
+		if label != "😴🤢 Sleeping (needs care)" {
+			t.Errorf("Expected label '😴🤢 Sleeping (needs care)', got '%s'", label)
+		}
+	})
+
+	t.Run("Sleeping with all stats good should not show 'needs care'", func(t *testing.T) {
+		testCfg := &TestConfig{
+			InitialHunger:    80,
+			InitialHappiness: 80,
+			InitialEnergy:    80,
+			Health:           80,
+			IsSleeping:       true,
+			LastSavedTime:    timeNow(),
+		}
+		pet := newPet(testCfg)
+
+		// Status should be just "😴" (sleeping, all good)
+		status := getStatus(pet)
+		if status != "😴" {
+			t.Errorf("Expected status '😴', got '%s'", status)
+		}
+
+		// Label should be "😴 Sleeping" (no "needs care")
+		label := getStatusWithLabel(pet)
+		if label != "😴 Sleeping" {
+			t.Errorf("Expected label '😴 Sleeping', got '%s'", label)
+		}
+	})
+}

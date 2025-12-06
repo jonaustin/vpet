@@ -2125,7 +2125,11 @@ func getStatusWithLabel(p Pet) string {
 
 	// Add descriptive label based on the icons
 	switch {
+	case strings.Contains(status, "😴") && strings.Contains(status, "😾"):
+		// Sleeping with low energy - don't show "needs care" since sleeping IS the care
+		return status + " Sleeping"
 	case strings.Contains(status, "😴") && len(status) > 4:
+		// Sleeping with other critical stats (hungry/sad/sick) - needs care
 		return status + " Sleeping (needs care)"
 	case strings.Contains(status, "😴"):
 		return status + " Sleeping"
