@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"math"
 	"math/rand"
 	"os"
 	"path/filepath"
@@ -245,12 +246,15 @@ var chaseTargets = map[string]ChaseTarget{
 
 // chaseModel is the Bubble Tea model for chase animation
 type chaseModel struct {
-	pet       Pet
-	target    ChaseTarget
-	termWidth int
-	petPos    int
-	targetPos int
-	frame     int
+	pet        Pet
+	target     ChaseTarget
+	termWidth  int
+	termHeight int
+	petPosX    int
+	petPosY    int
+	targetPosX int
+	targetPosY int
+	frame      int
 }
 
 type chaseAnimTickMsg time.Time
@@ -2133,12 +2137,15 @@ func runChaseAnimation() {
 	target := chaseTargets["butterfly"]
 
 	model := chaseModel{
-		pet:       pet,
-		target:    target,
-		petPos:    0,
-		targetPos: 5, // Start ahead
-		frame:     0,
-		termWidth: 80, // Default, will be updated by WindowSizeMsg
+		pet:        pet,
+		target:     target,
+		petPosX:    0,
+		petPosY:    12,      // Start in middle vertically
+		targetPosX: 5,       // Start ahead horizontally
+		targetPosY: 12,      // Start in middle vertically
+		frame:      0,
+		termWidth:  80,      // Default, will be updated by WindowSizeMsg
+		termHeight: 24,      // Default, will be updated by WindowSizeMsg
 	}
 
 	p := tea.NewProgram(model, tea.WithAltScreen())
@@ -2149,7 +2156,7 @@ func runChaseAnimation() {
 }
 
 func chaseAnimTick() tea.Cmd {
-	return tea.Tick(100*time.Millisecond, func(t time.Time) tea.Msg {
+	return tea.Tick(70*time.Millisecond, func(t time.Time) tea.Msg {
 		return chaseAnimTickMsg(t)
 	})
 }
@@ -2373,6 +2380,7 @@ func (m chaseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		// Handle terminal resize
 		m.termWidth = msg.Width
+		m.termHeight = msg.Height
 		return m, nil
 
 	case chaseAnimTickMsg:
@@ -2380,18 +2388,56 @@ func (m chaseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Move target (butterfly) - moves every N frames based on speed
 		if m.frame%m.target.Speed == 0 {
-			m.targetPos++
+			// Horizontal movement (always moving right)
+			m.targetPosX++
+
 			// If target reached end, animation completes
-			if m.targetPos >= m.termWidth-2 {
+			if m.targetPosX >= m.termWidth-2 {
 				return m, tea.Quit
+			}
+
+			// Vertical flutter pattern using sine wave
+			// Use frame as input to create smooth up/down movement
+			amplitude := float64(m.termHeight) / 4.0 // Flutter up/down by 1/4 of screen
+			centerY := float64(m.termHeight) / 2.0
+			frequency := 0.2 // Controls how wavy the pattern is
+
+			newY := centerY + amplitude*math.Sin(float64(m.targetPosX)*frequency)
+			m.targetPosY = int(newY)
+
+			// Keep within bounds (leave room for instruction at bottom)
+			if m.targetPosY < 2 {
+				m.targetPosY = 2
+			}
+			if m.targetPosY > m.termHeight-5 {
+				m.targetPosY = m.termHeight - 5
 			}
 		}
 
-		// Move pet - slightly faster than target (every 2 frames)
+		// Move pet - follows butterfly in 2D space (every 2 frames)
 		if m.frame%2 == 0 {
-			// Only move if not too close (maintain chase distance)
-			if m.targetPos-m.petPos > 3 {
-				m.petPos++
+			// Calculate distance in both dimensions
+			distX := m.targetPosX - m.petPosX
+			distY := m.targetPosY - m.petPosY
+
+			// Move horizontally if far enough behind
+			if distX > 3 {
+				m.petPosX++
+			}
+
+			// Move vertically to follow butterfly
+			if distY > 1 {
+				m.petPosY++
+			} else if distY < -1 {
+				m.petPosY--
+			}
+
+			// Keep pet within bounds
+			if m.petPosY < 2 {
+				m.petPosY = 2
+			}
+			if m.petPosY > m.termHeight-5 {
+				m.petPosY = m.termHeight - 5
 			}
 		}
 
@@ -2402,43 +2448,53 @@ func (m chaseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m chaseModel) View() string {
-	if m.termWidth == 0 {
+	if m.termWidth == 0 || m.termHeight == 0 {
 		return "Initializing..."
 	}
 
 	// Use active/chasing emoji for pet
 	petEmoji := "😸"
 
-	// Build animation line with pet and target at their positions
-	line := make([]rune, m.termWidth)
-	for i := 0; i < m.termWidth; i++ {
-		line[i] = ' '
+	// Build 2D grid for animation
+	grid := make([][]rune, m.termHeight)
+	for y := 0; y < m.termHeight; y++ {
+		grid[y] = make([]rune, m.termWidth)
+		for x := 0; x < m.termWidth; x++ {
+			grid[y][x] = ' '
+		}
 	}
 
-	// Place target (butterfly)
-	if m.targetPos < m.termWidth-2 {
+	// Place target (butterfly) at its 2D position
+	if m.targetPosY >= 0 && m.targetPosY < m.termHeight && m.targetPosX >= 0 && m.targetPosX < m.termWidth-2 {
 		targetRunes := []rune(m.target.Emoji)
 		for i, r := range targetRunes {
-			if m.targetPos+i < m.termWidth {
-				line[m.targetPos+i] = r
+			if m.targetPosX+i < m.termWidth {
+				grid[m.targetPosY][m.targetPosX+i] = r
 			}
 		}
 	}
 
-	// Place pet
-	if m.petPos < m.termWidth-2 {
+	// Place pet at its 2D position
+	if m.petPosY >= 0 && m.petPosY < m.termHeight && m.petPosX >= 0 && m.petPosX < m.termWidth-2 {
 		petRunes := []rune(petEmoji)
 		for i, r := range petRunes {
-			if m.petPos+i < m.termWidth {
-				line[m.petPos+i] = r
+			if m.petPosX+i < m.termWidth {
+				grid[m.petPosY][m.petPosX+i] = r
 			}
 		}
+	}
+
+	// Convert grid to string
+	var result strings.Builder
+	for y := 0; y < m.termHeight-3; y++ { // Leave room for instruction
+		result.WriteString(string(grid[y]))
+		result.WriteRune('\n')
 	}
 
 	// Add instruction at bottom
-	instruction := "\n\nPress any key to exit"
+	result.WriteString("\nPress any key to exit")
 
-	return string(line) + instruction
+	return result.String()
 }
 
 func displayStats(pet Pet) {
