@@ -1,13 +1,144 @@
-package main
+package pet
 
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
 )
+
+// testModel is a minimal model for testing pet interactions
+type testModel struct {
+	pet     Pet
+	message string
+}
+
+func initialModel(testCfg *TestConfig) testModel {
+	var p Pet
+	if testCfg != nil {
+		p = NewPet(testCfg)
+	} else {
+		p = LoadState()
+	}
+	return testModel{pet: p}
+}
+
+func (m *testModel) modifyStats(f func(*Pet)) {
+	f(&m.pet)
+	SaveState(&m.pet)
+}
+
+func (m *testModel) feed() {
+	if m.pet.Hunger >= 90 {
+		m.message = "🍽️ Not hungry right now!"
+		return
+	}
+	recentFeeds := CountRecentInteractions(m.pet.LastInteractions, "feed", SpamPreventionWindow)
+	hungerBefore := m.pet.Hunger
+
+	m.modifyStats(func(p *Pet) {
+		p.Sleeping = false
+		p.AutoSleepTime = nil
+		p.FractionalEnergy = 0
+
+		effectiveness := 1.0
+		if recentFeeds > 0 {
+			effectiveness = 1.0 / float64(recentFeeds+1)
+		}
+
+		bondMultiplier := p.GetBondMultiplier()
+		hungerGain := int(float64(FeedHungerIncrease) * p.GetTraitModifier("feed_bonus") * effectiveness * bondMultiplier)
+		happinessGain := int(float64(FeedHappinessIncrease) * p.GetTraitModifier("feed_bonus_happiness") * effectiveness * bondMultiplier)
+
+		p.Hunger = min(p.Hunger+hungerGain, MaxStat)
+		p.Happiness = min(p.Happiness+happinessGain, MaxStat)
+		p.AddInteraction("feed")
+
+		if recentFeeds == 0 && hungerBefore < 50 {
+			p.UpdateBond(BondGainWellTimed)
+		} else if recentFeeds == 0 {
+			p.UpdateBond(BondGainNormal)
+		}
+	})
+}
+
+func (m *testModel) play() {
+	if m.pet.Energy < AutoSleepThreshold {
+		m.message = "😴 Too tired to play..."
+		return
+	}
+	if m.pet.Mood == "lazy" && m.pet.Energy < 50 {
+		m.message = "😪 Not in the mood to play..."
+		return
+	}
+
+	currentHour := TimeNow().Local().Hour()
+	isActive := IsActiveHours(&m.pet, currentHour)
+	recentPlays := CountRecentInteractions(m.pet.LastInteractions, "play", SpamPreventionWindow)
+	happinessBefore := m.pet.Happiness
+
+	m.modifyStats(func(p *Pet) {
+		p.Sleeping = false
+		p.AutoSleepTime = nil
+		p.FractionalEnergy = 0
+
+		effectiveness := 1.0
+		if recentPlays > 0 {
+			effectiveness = 1.0 / float64(recentPlays+1)
+		}
+
+		bondMultiplier := p.GetBondMultiplier()
+		happinessGain := float64(PlayHappinessIncrease)
+		if !isActive {
+			happinessGain *= OutsideActiveHappinessMult
+		}
+		happinessGain *= p.GetTraitModifier("play_bonus")
+		happinessGain *= bondMultiplier * effectiveness
+
+		p.Happiness = min(p.Happiness+int(happinessGain), MaxStat)
+		p.Energy = max(p.Energy-PlayEnergyDecrease, MinStat)
+		p.Hunger = max(p.Hunger-PlayHungerDecrease, MinStat)
+		p.AddInteraction("play")
+
+		if recentPlays == 0 && happinessBefore < 50 {
+			p.UpdateBond(BondGainWellTimed)
+		} else if recentPlays == 0 {
+			p.UpdateBond(BondGainNormal)
+		}
+	})
+
+	// Set success message based on conditions (matches ui/model.go play())
+	if !isActive {
+		m.message = "🥱 *yawn* ...play time..."
+	} else if m.pet.Mood == "playful" {
+		m.message = "🎉 So much fun!"
+	} else {
+		m.message = "🎾 Wheee!"
+	}
+}
+
+func (m *testModel) toggleSleep() {
+	m.modifyStats(func(p *Pet) {
+		p.Sleeping = !p.Sleeping
+		p.AutoSleepTime = nil
+		p.FractionalEnergy = 0
+		log.Printf("Pet is now sleeping: %t", p.Sleeping)
+	})
+}
+
+func (m *testModel) administerMedicine() {
+	m.modifyStats(func(p *Pet) {
+		p.Illness = false
+		bondMultiplier := p.GetBondMultiplier()
+		healthGain := int(float64(MedicineEffect) * bondMultiplier)
+		p.Health = min(p.Health+healthGain, MaxStat)
+		p.AddInteraction("medicine")
+		p.UpdateBond(BondGainWellTimed)
+	})
+}
 
 func setupTestFile(t *testing.T) func() {
 	// Create a temporary directory for test files
@@ -17,21 +148,21 @@ func setupTestFile(t *testing.T) func() {
 	}
 
 	// Set the test config path
-	testConfigPath = filepath.Join(tmpDir, "test-pet.json")
+	TestConfigPath = filepath.Join(tmpDir, "test-pet.json")
 
 	// Return cleanup function
 	return func() {
-		testConfigPath = "" // Reset the test path
+		TestConfigPath = "" // Reset the test path
 		// os.RemoveAll(tmpDir)
 	}
 }
 
 // mockTimeNow sets a fixed time for deterministic tests and auto-restores after test
 func mockTimeNow(t *testing.T) time.Time {
-	originalTimeNow := timeNow
+	originalTimeNow := TimeNow
 	currentTime := time.Date(2024, 1, 1, 12, 0, 0, 0, time.Local)
-	timeNow = func() time.Time { return currentTime }
-	t.Cleanup(func() { timeNow = originalTimeNow })
+	TimeNow = func() time.Time { return currentTime }
+	t.Cleanup(func() { TimeNow = originalTimeNow })
 	return currentTime
 }
 
@@ -44,18 +175,18 @@ func TestDeathConditions(t *testing.T) {
 	// Create pet that has been critical for 13 hours (exceeds 12h threshold)
 	criticalStart := currentTime.Add(-13 * time.Hour)
 	testCfg := &TestConfig{
-		InitialHunger:    lowStatThreshold - 1,
-		InitialHappiness: lowStatThreshold - 1,
-		InitialEnergy:    lowStatThreshold - 1,
+		InitialHunger:    LowStatThreshold - 1,
+		InitialHappiness: LowStatThreshold - 1,
+		InitialEnergy:    LowStatThreshold - 1,
 		Health:           20, // Force critical health
 		LastSavedTime:    criticalStart,
 	}
-	pet := newPet(testCfg)
+	pet := NewPet(testCfg)
 	pet.CriticalStartTime = &criticalStart
-	saveState(&pet)
+	SaveState(&pet)
 
 	// Fix LastSaved time in file
-	data, err := os.ReadFile(testConfigPath)
+	data, err := os.ReadFile(TestConfigPath)
 	if err != nil {
 		t.Fatalf("Failed to read test file: %v", err)
 	}
@@ -68,11 +199,11 @@ func TestDeathConditions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to marshal pet: %v", err)
 	}
-	if err := os.WriteFile(testConfigPath, data, 0644); err != nil {
+	if err := os.WriteFile(TestConfigPath, data, 0644); err != nil {
 		t.Fatalf("Failed to write test file: %v", err)
 	}
 
-	loadedPet := loadState()
+	loadedPet := LoadState()
 
 	if !loadedPet.Dead {
 		t.Error("Expected pet to be dead after 12+ hours in critical state")
@@ -89,9 +220,9 @@ func TestNaturalDeathFromOldAge(t *testing.T) {
 
 	currentTime := mockTimeNow(t)
 
-	// Save original randFloat64 and restore after test
-	originalRandFloat64 := randFloat64
-	defer func() { randFloat64 = originalRandFloat64 }()
+	// Save original RandFloat64 and restore after test
+	originalRandFloat64 := RandFloat64
+	defer func() { RandFloat64 = originalRandFloat64 }()
 
 	// Create a healthy but old pet (168+ hours)
 	birthTime := currentTime.Add(-200 * time.Hour)
@@ -103,11 +234,11 @@ func TestNaturalDeathFromOldAge(t *testing.T) {
 		Health:           100,
 		LastSavedTime:    birthTime,
 	}
-	pet := newPet(testCfg)
-	saveState(&pet)
+	pet := NewPet(testCfg)
+	SaveState(&pet)
 
 	// Fix LastSaved time in file to make pet 200 hours old
-	data, err := os.ReadFile(testConfigPath)
+	data, err := os.ReadFile(TestConfigPath)
 	if err != nil {
 		t.Fatalf("Failed to read test file: %v", err)
 	}
@@ -120,13 +251,13 @@ func TestNaturalDeathFromOldAge(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to marshal pet: %v", err)
 	}
-	if err := os.WriteFile(testConfigPath, data, 0644); err != nil {
+	if err := os.WriteFile(TestConfigPath, data, 0644); err != nil {
 		t.Fatalf("Failed to write test file: %v", err)
 	}
 
 	// Test old age death triggers
-	randFloat64 = func() float64 { return 0.0 } // Always trigger death
-	loadedPet := loadState()
+	RandFloat64 = func() float64 { return 0.0 } // Always trigger death
+	loadedPet := LoadState()
 
 	if !loadedPet.Dead {
 		t.Error("Expected old pet (200h) to die of old age")
@@ -139,18 +270,18 @@ func TestNaturalDeathFromOldAge(t *testing.T) {
 	cleanup() // Reset test file
 	cleanup = setupTestFile(t)
 
-	pet = newPet(testCfg)
-	saveState(&pet)
+	pet = NewPet(testCfg)
+	SaveState(&pet)
 
 	// Fix LastSaved time again
-	data, _ = os.ReadFile(testConfigPath)
+	data, _ = os.ReadFile(TestConfigPath)
 	json.Unmarshal(data, &savedPet)
 	savedPet.LastSaved = birthTime
 	data, _ = json.MarshalIndent(savedPet, "", "  ")
-	os.WriteFile(testConfigPath, data, 0644)
+	os.WriteFile(TestConfigPath, data, 0644)
 
-	randFloat64 = func() float64 { return 1.0 } // Never trigger death
-	loadedPet = loadState()
+	RandFloat64 = func() float64 { return 1.0 } // Never trigger death
+	loadedPet = LoadState()
 
 	if loadedPet.Dead {
 		t.Error("Expected old pet not to die when random value is high")
@@ -173,12 +304,12 @@ func TestDeathCausePriority(t *testing.T) {
 			Illness:          true, // Also sick
 			LastSavedTime:    criticalStart,
 		}
-		pet := newPet(testCfg)
+		pet := NewPet(testCfg)
 		pet.CriticalStartTime = &criticalStart
-		saveState(&pet)
+		SaveState(&pet)
 
 		// Fix LastSaved time in file
-		data, err := os.ReadFile(testConfigPath)
+		data, err := os.ReadFile(TestConfigPath)
 		if err != nil {
 			t.Fatalf("Failed to read test file: %v", err)
 		}
@@ -191,11 +322,11 @@ func TestDeathCausePriority(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to marshal pet: %v", err)
 		}
-		if err := os.WriteFile(testConfigPath, data, 0644); err != nil {
+		if err := os.WriteFile(TestConfigPath, data, 0644); err != nil {
 			t.Fatalf("Failed to write test file: %v", err)
 		}
 
-		loadedPet := loadState()
+		loadedPet := LoadState()
 
 		if !loadedPet.Dead {
 			t.Error("Expected pet to be dead")
@@ -217,20 +348,20 @@ func TestDeathCausePriority(t *testing.T) {
 			Illness:          true,
 			LastSavedTime:    criticalStart,
 		}
-		pet := newPet(testCfg)
+		pet := NewPet(testCfg)
 		pet.CriticalStartTime = &criticalStart
 		pet.Traits = []Trait{} // Clear traits for predictable test results
-		saveState(&pet)
+		SaveState(&pet)
 
 		// Fix LastSaved time in file
-		data, _ := os.ReadFile(testConfigPath)
+		data, _ := os.ReadFile(TestConfigPath)
 		var savedPet Pet
 		json.Unmarshal(data, &savedPet)
 		savedPet.LastSaved = criticalStart
 		data, _ = json.MarshalIndent(savedPet, "", "  ")
-		os.WriteFile(testConfigPath, data, 0644)
+		os.WriteFile(TestConfigPath, data, 0644)
 
-		loadedPet := loadState()
+		loadedPet := LoadState()
 
 		if !loadedPet.Dead {
 			t.Error("Expected pet to be dead")
@@ -245,9 +376,9 @@ func TestDeathCausePriority(t *testing.T) {
 		cleanup = setupTestFile(t)
 
 		// Prevent random illness during the test (would change cause of death)
-		originalRandFloat64 := randFloat64
-		randFloat64 = func() float64 { return 1.0 }
-		defer func() { randFloat64 = originalRandFloat64 }()
+		originalRandFloat64 := RandFloat64
+		RandFloat64 = func() float64 { return 1.0 }
+		defer func() { RandFloat64 = originalRandFloat64 }()
 
 		testCfg := &TestConfig{
 			InitialHunger:    70, // High enough to not hit 0 (13*5=65 decrease)
@@ -257,20 +388,20 @@ func TestDeathCausePriority(t *testing.T) {
 			Illness:          false, // Not sick
 			LastSavedTime:    criticalStart,
 		}
-		pet := newPet(testCfg)
+		pet := NewPet(testCfg)
 		pet.CriticalStartTime = &criticalStart
 		pet.Traits = []Trait{} // Clear traits for predictable test results
-		saveState(&pet)
+		SaveState(&pet)
 
 		// Fix LastSaved time in file
-		data, _ := os.ReadFile(testConfigPath)
+		data, _ := os.ReadFile(TestConfigPath)
 		var savedPet Pet
 		json.Unmarshal(data, &savedPet)
 		savedPet.LastSaved = criticalStart
 		data, _ = json.MarshalIndent(savedPet, "", "  ")
-		os.WriteFile(testConfigPath, data, 0644)
+		os.WriteFile(TestConfigPath, data, 0644)
 
-		loadedPet := loadState()
+		loadedPet := LoadState()
 
 		if !loadedPet.Dead {
 			t.Error("Expected pet to be dead")
@@ -298,14 +429,14 @@ func TestCriticalStateRecovery(t *testing.T) {
 		LastSavedTime:    twoHoursAgo,
 	}
 
-	pet := newPet(testCfg)
+	pet := NewPet(testCfg)
 	// Manually set critical start time to simulate pet WAS in critical state
 	oneHourAgo := currentTime.Add(-1 * time.Hour)
 	pet.CriticalStartTime = &oneHourAgo
-	saveState(&pet)
+	SaveState(&pet)
 
 	// Fix LastSaved time in file
-	data, err := os.ReadFile(testConfigPath)
+	data, err := os.ReadFile(TestConfigPath)
 	if err != nil {
 		t.Fatalf("Failed to read test file: %v", err)
 	}
@@ -318,7 +449,7 @@ func TestCriticalStateRecovery(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to marshal pet: %v", err)
 	}
-	if err := os.WriteFile(testConfigPath, data, 0644); err != nil {
+	if err := os.WriteFile(TestConfigPath, data, 0644); err != nil {
 		t.Fatalf("Failed to write test file: %v", err)
 	}
 
@@ -330,7 +461,7 @@ func TestCriticalStateRecovery(t *testing.T) {
 	// Load state - pet should recover from critical state
 	// After 2 hours: Hunger=50-10=40, Happiness=50, Energy=50-5=45, Health=50
 	// All above thresholds: Health>20, Hunger>=10, Happiness>=10, Energy>=10
-	loadedPet := loadState()
+	loadedPet := LoadState()
 
 	// Verify CriticalStartTime has been reset
 	if loadedPet.CriticalStartTime != nil {
@@ -360,15 +491,15 @@ func TestCriticalStateRecovery(t *testing.T) {
 func TestNewPet(t *testing.T) {
 	cleanup := setupTestFile(t)
 	defer cleanup()
-	pet := newPet(nil)
+	pet := NewPet(nil)
 
-	if pet.Name != defaultPetName {
-		t.Errorf("Expected pet name to be %s, got %s", defaultPetName, pet.Name)
+	if pet.Name != DefaultPetName {
+		t.Errorf("Expected pet name to be %s, got %s", DefaultPetName, pet.Name)
 	}
 
 	// Check new fields
-	if pet.Health != maxStat {
-		t.Errorf("Expected initial health to be %d, got %d", maxStat, pet.Health)
+	if pet.Health != MaxStat {
+		t.Errorf("Expected initial health to be %d, got %d", MaxStat, pet.Health)
 	}
 	if pet.Age != 0 {
 		t.Errorf("Expected initial age to be 0, got %d", pet.Age)
@@ -380,8 +511,8 @@ func TestNewPet(t *testing.T) {
 		t.Error("New pet should not be ill")
 	}
 
-	if pet.Health != maxStat {
-		t.Errorf("Expected initial health to be %d, got %d", maxStat, pet.Health)
+	if pet.Health != MaxStat {
+		t.Errorf("Expected initial health to be %d, got %d", MaxStat, pet.Health)
 	}
 	if pet.Age != 0 {
 		t.Errorf("Expected initial age to be 0, got %d", pet.Age)
@@ -393,16 +524,16 @@ func TestNewPet(t *testing.T) {
 		t.Error("New pet should not be ill")
 	}
 
-	if pet.Hunger != maxStat {
-		t.Errorf("Expected initial hunger to be %d, got %d", maxStat, pet.Hunger)
+	if pet.Hunger != MaxStat {
+		t.Errorf("Expected initial hunger to be %d, got %d", MaxStat, pet.Hunger)
 	}
 
-	if pet.Happiness != maxStat {
-		t.Errorf("Expected initial happiness to be %d, got %d", maxStat, pet.Happiness)
+	if pet.Happiness != MaxStat {
+		t.Errorf("Expected initial happiness to be %d, got %d", MaxStat, pet.Happiness)
 	}
 
-	if pet.Energy != maxStat {
-		t.Errorf("Expected initial energy to be %d, got %d", maxStat, pet.Energy)
+	if pet.Energy != MaxStat {
+		t.Errorf("Expected initial energy to be %d, got %d", MaxStat, pet.Energy)
 	}
 
 	if pet.Sleeping {
@@ -469,23 +600,23 @@ func TestStatBoundaries(t *testing.T) {
 	m := initialModel(nil)
 
 	// Test upper bounds
-	m.pet.Hunger = maxStat
+	m.pet.Hunger = MaxStat
 	m.feed()
-	if m.pet.Hunger > maxStat {
-		t.Errorf("Hunger should not exceed %d", maxStat)
+	if m.pet.Hunger > MaxStat {
+		t.Errorf("Hunger should not exceed %d", MaxStat)
 	}
 
-	m.pet.Happiness = maxStat
+	m.pet.Happiness = MaxStat
 	m.play()
-	if m.pet.Happiness > maxStat {
-		t.Errorf("Happiness should not exceed %d", maxStat)
+	if m.pet.Happiness > MaxStat {
+		t.Errorf("Happiness should not exceed %d", MaxStat)
 	}
 
 	// Test lower bounds
-	m.pet.Energy = minStat
+	m.pet.Energy = MinStat
 	m.play()
-	if m.pet.Energy < minStat {
-		t.Errorf("Energy should not go below %d", minStat)
+	if m.pet.Energy < MinStat {
+		t.Errorf("Energy should not go below %d", MinStat)
 	}
 }
 
@@ -506,11 +637,11 @@ func TestSleepingPetStaysAsleepAtFullEnergy(t *testing.T) {
 		LastSavedTime:    oneHourAgo,
 	}
 
-	pet := newPet(testCfg)
-	saveState(&pet)
+	pet := NewPet(testCfg)
+	SaveState(&pet)
 
 	// Fix LastSaved time in file
-	data, err := os.ReadFile(testConfigPath)
+	data, err := os.ReadFile(TestConfigPath)
 	if err != nil {
 		t.Fatalf("Failed to read test file: %v", err)
 	}
@@ -523,12 +654,12 @@ func TestSleepingPetStaysAsleepAtFullEnergy(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to marshal pet: %v", err)
 	}
-	if err := os.WriteFile(testConfigPath, data, 0644); err != nil {
+	if err := os.WriteFile(TestConfigPath, data, 0644); err != nil {
 		t.Fatalf("Failed to write test file: %v", err)
 	}
 
 	// Load state - after 1 hour of sleeping, energy should be 100
-	loadedPet := loadState()
+	loadedPet := LoadState()
 
 	if loadedPet.Energy != 100 {
 		t.Errorf("Expected energy to be 100 after 1 hour of sleep, got %d", loadedPet.Energy)
@@ -545,38 +676,38 @@ func TestTimeBasedUpdates(t *testing.T) {
 	defer cleanup()
 
 	// Save current time.Now and restore after test
-	originalTimeNow := timeNow
-	defer func() { timeNow = originalTimeNow }()
+	originalTimeNow := TimeNow
+	defer func() { TimeNow = originalTimeNow }()
 
-	// Save original randFloat64 and restore after test
-	originalRandFloat64 := randFloat64
-	defer func() { randFloat64 = originalRandFloat64 }()
+	// Save original RandFloat64 and restore after test
+	originalRandFloat64 := RandFloat64
+	defer func() { RandFloat64 = originalRandFloat64 }()
 
 	// Set current time to noon local time (during active hours for Night Owl chronotype)
 	currentTime := time.Date(2024, 1, 1, 12, 0, 0, 0, time.Local)
-	timeNow = func() time.Time { return currentTime }
+	TimeNow = func() time.Time { return currentTime }
 
 	// Prevent random illness from making test non-deterministic
-	randFloat64 = func() float64 { return 1.0 }
+	RandFloat64 = func() float64 { return 1.0 }
 
 	// Create initial pet state from 2 hours ago
 	twoHoursAgo := currentTime.Add(-2 * time.Hour)
 	testCfg := &TestConfig{
-		InitialHunger:    maxStat, // Start at 100%
-		InitialHappiness: maxStat, // Start at 100%
-		InitialEnergy:    maxStat, // Start at 100%
+		InitialHunger:    MaxStat, // Start at 100%
+		InitialHappiness: MaxStat, // Start at 100%
+		InitialEnergy:    MaxStat, // Start at 100%
 		IsSleeping:       false,
 		LastSavedTime:    twoHoursAgo, // Set last saved to 2 hours ago
 	}
 
 	// Save initial state
-	pet := newPet(testCfg)
+	pet := NewPet(testCfg)
 	pet.Chronotype = ChronotypeNightOwl // Set chronotype where noon is in active hours (10am-2am)
 	pet.Traits = []Trait{}              // Clear traits for predictable test results
-	saveState(&pet)
+	SaveState(&pet)
 
 	// Fix the LastSaved time in the saved file
-	data, err := os.ReadFile(testConfigPath)
+	data, err := os.ReadFile(TestConfigPath)
 	if err != nil {
 		t.Fatalf("Failed to read test file: %v", err)
 	}
@@ -589,27 +720,27 @@ func TestTimeBasedUpdates(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to marshal pet: %v", err)
 	}
-	if err := os.WriteFile(testConfigPath, data, 0644); err != nil {
+	if err := os.WriteFile(TestConfigPath, data, 0644); err != nil {
 		t.Fatalf("Failed to write test file: %v", err)
 	}
 
 	// Load state which will process the elapsed time
-	loadedPet := loadState()
+	loadedPet := LoadState()
 
 	// Verify stats decreased appropriately for 2 hours
-	expectedHunger := maxStat - (2 * hungerDecreaseRate) // 2 hours * 5 per hour = 10 decrease
+	expectedHunger := MaxStat - (2 * HungerDecreaseRate) // 2 hours * 5 per hour = 10 decrease
 	if loadedPet.Hunger != expectedHunger {
 		t.Errorf("Expected hunger to be %d after 2 hours, got %d", expectedHunger, loadedPet.Hunger)
 	}
 
-	expectedEnergy := maxStat - energyDecreaseRate // 2 hours = 1 energy decrease
+	expectedEnergy := MaxStat - EnergyDecreaseRate // 2 hours = 1 energy decrease
 	if loadedPet.Energy != expectedEnergy {
 		t.Errorf("Expected energy to be %d after 2 hours, got %d", expectedEnergy, loadedPet.Energy)
 	}
 
 	// Happiness shouldn't decrease since hunger and energy are still above threshold
-	if loadedPet.Happiness != maxStat {
-		t.Errorf("Expected happiness to stay at %d, got %d", maxStat, loadedPet.Happiness)
+	if loadedPet.Happiness != MaxStat {
+		t.Errorf("Expected happiness to stay at %d, got %d", MaxStat, loadedPet.Happiness)
 	}
 }
 
@@ -621,7 +752,7 @@ func TestIllnessSystem(t *testing.T) {
 
 	t.Run("Develop illness", func(t *testing.T) {
 		// Force deterministic illness check
-		randFloat64 = func() float64 { return 0.05 } // Always < 0.1 illness threshold
+		RandFloat64 = func() float64 { return 0.05 } // Always < 0.1 illness threshold
 
 		// Create pet with low health
 		// Use fixed timestamps to ensure exact 1 hour difference
@@ -631,14 +762,14 @@ func TestIllnessSystem(t *testing.T) {
 			Illness:       false,
 			LastSavedTime: baseTime,
 		}
-		pet := newPet(testCfg)
+		pet := NewPet(testCfg)
 		pet.Traits = []Trait{} // Clear traits for predictable results
-		saveState(&pet)
+		SaveState(&pet)
 
 		// Load with exact 1 hour later time
 		loadedPet := func() Pet {
-			timeNow = func() time.Time { return baseTime.Add(time.Hour) }
-			return loadState()
+			TimeNow = func() time.Time { return baseTime.Add(time.Hour) }
+			return LoadState()
 		}()
 		if !loadedPet.Illness {
 			t.Error("Expected pet to develop illness with low health")
@@ -671,10 +802,10 @@ func TestIllnessSystem(t *testing.T) {
 			Illness:       false,
 			LastSavedTime: currentTime.Add(-1 * time.Hour),
 		}
-		pet := newPet(testCfg)
-		saveState(&pet)
+		pet := NewPet(testCfg)
+		SaveState(&pet)
 
-		loadedPet := loadState()
+		loadedPet := LoadState()
 		if loadedPet.Illness {
 			t.Error("Pet with health >50 shouldn't develop illness")
 		}
@@ -687,11 +818,11 @@ func TestIllnessSystem(t *testing.T) {
 			Illness:       true,
 			LastSavedTime: currentTime.Add(-1 * time.Hour),
 		}
-		pet := newPet(testCfg)
+		pet := NewPet(testCfg)
 		pet.Health = 60 // Set health to safe level
-		saveState(&pet)
+		SaveState(&pet)
 
-		loadedPet := loadState()
+		loadedPet := LoadState()
 		if loadedPet.Illness {
 			t.Error("Pet should automatically recover from illness when health >= 50")
 		}
@@ -703,116 +834,116 @@ func TestGetStatus(t *testing.T) {
 	defer cleanup()
 
 	t.Run("Dead status", func(t *testing.T) {
-		pet := newPet(nil)
+		pet := NewPet(nil)
 		pet.Dead = true
-		if status := getStatus(pet); status != "💀" {
+		if status := GetStatus(pet); status != "💀" {
 			t.Errorf("Expected 💀, got %s", status)
 		}
 	})
 
 	t.Run("Sleeping status", func(t *testing.T) {
-		pet := newPet(nil)
+		pet := NewPet(nil)
 		pet.Sleeping = true
-		if status := getStatus(pet); status != "😴" {
+		if status := GetStatus(pet); status != "😴" {
 			t.Errorf("Expected 😴, got %s", status)
 		}
 	})
 
 	t.Run("Hungry status (awake)", func(t *testing.T) {
-		pet := newPet(nil)
-		pet.Hunger = lowStatThreshold - 1
+		pet := NewPet(nil)
+		pet.Hunger = LowStatThreshold - 1
 		// Activity (awake) + Feeling (hungry)
-		if status := getStatus(pet); status != "😸🙀" {
+		if status := GetStatus(pet); status != "😸🙀" {
 			t.Errorf("Expected 😸🙀, got %s", status)
 		}
 	})
 
 	t.Run("Hungry status (sleeping)", func(t *testing.T) {
-		pet := newPet(nil)
-		pet.Hunger = lowStatThreshold - 1
+		pet := NewPet(nil)
+		pet.Hunger = LowStatThreshold - 1
 		pet.Sleeping = true
 		// Activity (sleeping) + Feeling (hungry)
-		if status := getStatus(pet); status != "😴🙀" {
+		if status := GetStatus(pet); status != "😴🙀" {
 			t.Errorf("Expected 😴🙀, got %s", status)
 		}
 	})
 
 	t.Run("Happy status", func(t *testing.T) {
-		pet := newPet(nil)
-		pet.Hunger = maxStat
-		pet.Energy = maxStat
-		pet.Happiness = maxStat
+		pet := NewPet(nil)
+		pet.Hunger = MaxStat
+		pet.Energy = MaxStat
+		pet.Happiness = MaxStat
 		// Activity (awake) + no feeling (all good)
-		if status := getStatus(pet); status != "😸" {
+		if status := GetStatus(pet); status != "😸" {
 			t.Errorf("Expected 😸, got %s", status)
 		}
 	})
 
 	t.Run("Want icon when hungry but not critical", func(t *testing.T) {
-		pet := newPet(nil)
+		pet := NewPet(nil)
 		pet.Hunger = 55 // Below 60 threshold but above critical
 		pet.Happiness = 90
 		pet.Energy = 90
-		if status := getStatus(pet); status != "😸🍖" {
+		if status := GetStatus(pet); status != "😸🍖" {
 			t.Errorf("Expected 😸🍖 (wants food), got %s", status)
 		}
 	})
 
 	t.Run("Want icon prioritizes play need", func(t *testing.T) {
-		pet := newPet(nil)
+		pet := NewPet(nil)
 		pet.Hunger = 90    // Not hungry
 		pet.Happiness = 55 // Wants play
 		pet.Energy = 85
-		if status := getStatus(pet); status != "😸🎾" {
+		if status := GetStatus(pet); status != "😸🎾" {
 			t.Errorf("Expected 😸🎾 (wants play), got %s", status)
 		}
 	})
 
 	t.Run("No rest want at mid energy", func(t *testing.T) {
-		pet := newPet(nil)
+		pet := NewPet(nil)
 		pet.Hunger = 90
 		pet.Happiness = 90
 		pet.Energy = 50 // Above rest-want trigger
-		if status := getStatus(pet); status != "😸" {
+		if status := GetStatus(pet); status != "😸" {
 			t.Errorf("Expected 😸 (no want), got %s", status)
 		}
 	})
 
 	t.Run("Rest want when low energy but not drowsy", func(t *testing.T) {
-		pet := newPet(nil)
+		pet := NewPet(nil)
 		pet.Hunger = 90
 		pet.Happiness = 90
 		pet.Energy = 45 // Triggers rest want, above drowsy threshold
-		if status := getStatus(pet); status != "😸🛌" {
+		if status := GetStatus(pet); status != "😸🛌" {
 			t.Errorf("Expected 😸🛌 (wants rest), got %s", status)
 		}
 	})
 
 	t.Run("No want icon when sleeping", func(t *testing.T) {
-		pet := newPet(nil)
+		pet := NewPet(nil)
 		pet.Hunger = 55 // Would want food if awake
 		pet.Sleeping = true
-		if status := getStatus(pet); status != "😴" {
+		if status := GetStatus(pet); status != "😴" {
 			t.Errorf("Expected 😴 (sleeping, no wants), got %s", status)
 		}
 	})
 
 	t.Run("Critical need still shows feeling, not want", func(t *testing.T) {
-		pet := newPet(nil)
+		pet := NewPet(nil)
 		pet.Hunger = 20 // Critical
-		if status := getStatus(pet); status != "😸🙀" {
+		if status := GetStatus(pet); status != "😸🙀" {
 			t.Errorf("Expected 😸🙀 (hungry critical), got %s", status)
 		}
 	})
 
 	t.Run("Event with critical stat", func(t *testing.T) {
 		currentTime := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
-		originalTimeNow := timeNow
-		timeNow = func() time.Time { return currentTime }
-		defer func() { timeNow = originalTimeNow }()
+		originalTimeNow := TimeNow
+		TimeNow = func() time.Time { return currentTime }
+		defer func() { TimeNow = originalTimeNow }()
 
-		pet := newPet(nil)
-		pet.Hunger = lowStatThreshold - 1 // Critical hunger
+		pet := NewPet(nil)
+		pet.Hunger = LowStatThreshold - 1 // Critical hunger
 		pet.CurrentEvent = &Event{
 			Type:      EventChasing,
 			StartTime: currentTime,
@@ -820,18 +951,18 @@ func TestGetStatus(t *testing.T) {
 			Responded: false,
 		}
 		// Should show event emoji + hungry feeling
-		if status := getStatus(pet); status != "🦋🙀" {
+		if status := GetStatus(pet); status != "🦋🙀" {
 			t.Errorf("Expected 🦋🙀 (event + hungry), got %s", status)
 		}
 	})
 
 	t.Run("Event without critical stat", func(t *testing.T) {
 		currentTime := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
-		originalTimeNow := timeNow
-		timeNow = func() time.Time { return currentTime }
-		defer func() { timeNow = originalTimeNow }()
+		originalTimeNow := TimeNow
+		TimeNow = func() time.Time { return currentTime }
+		defer func() { TimeNow = originalTimeNow }()
 
-		pet := newPet(nil)
+		pet := NewPet(nil)
 		pet.CurrentEvent = &Event{
 			Type:      EventSinging,
 			StartTime: currentTime,
@@ -839,78 +970,78 @@ func TestGetStatus(t *testing.T) {
 			Responded: false,
 		}
 		// Should show just event emoji
-		if status := getStatus(pet); status != "🎵" {
+		if status := GetStatus(pet); status != "🎵" {
 			t.Errorf("Expected 🎵 (event only), got %s", status)
 		}
 	})
 
 	t.Run("Sleeping with critical stat", func(t *testing.T) {
-		pet := newPet(nil)
+		pet := NewPet(nil)
 		pet.Sleeping = true
-		pet.Energy = lowStatThreshold - 1 // Critical energy
+		pet.Energy = LowStatThreshold - 1 // Critical energy
 		// Activity (sleeping) + Feeling (tired)
-		if status := getStatus(pet); status != "😴😾" {
+		if status := GetStatus(pet); status != "😴😾" {
 			t.Errorf("Expected 😴😾, got %s", status)
 		}
 	})
 
 	t.Run("Drowsy status when energy between thresholds", func(t *testing.T) {
-		pet := newPet(nil)
+		pet := NewPet(nil)
 		pet.Energy = 35 // Above critical (30) but below drowsy (40)
 		pet.Sleeping = false
 		// Should show awake + drowsy
-		if status := getStatus(pet); status != "😸🥱" {
+		if status := GetStatus(pet); status != "😸🥱" {
 			t.Errorf("Expected 😸🥱 (drowsy), got %s", status)
 		}
 	})
 
 	t.Run("No drowsy when sleeping", func(t *testing.T) {
-		pet := newPet(nil)
+		pet := NewPet(nil)
 		pet.Energy = 35 // Below drowsy threshold
 		pet.Sleeping = true
 		// Should not show drowsy when sleeping
-		if status := getStatus(pet); status != "😴" {
+		if status := GetStatus(pet); status != "😴" {
 			t.Errorf("Expected 😴 (sleeping, no drowsy), got %s", status)
 		}
 	})
 
 	t.Run("Sad status lowest priority", func(t *testing.T) {
-		pet := newPet(nil)
-		pet.Happiness = lowStatThreshold - 1 // Low happiness
+		pet := NewPet(nil)
+		pet.Happiness = LowStatThreshold - 1 // Low happiness
 		// Activity (awake) + Feeling (sad)
-		if status := getStatus(pet); status != "😸😿" {
+		if status := GetStatus(pet); status != "😸😿" {
 			t.Errorf("Expected 😸😿, got %s", status)
 		}
 	})
 
 	t.Run("Sick status when health is lowest", func(t *testing.T) {
-		pet := newPet(nil)
-		pet.Health = lowStatThreshold - 1 // Low health
+		pet := NewPet(nil)
+		pet.Health = LowStatThreshold - 1 // Low health
 		// Activity (awake) + Feeling (sick)
-		if status := getStatus(pet); status != "😸🤢" {
+		if status := GetStatus(pet); status != "😸🤢" {
 			t.Errorf("Expected 😸🤢, got %s", status)
 		}
 	})
 
 	t.Run("Lowest stat determines feeling", func(t *testing.T) {
-		pet := newPet(nil)
+		pet := NewPet(nil)
 		pet.Hunger = 25    // Low
 		pet.Happiness = 20 // Lowest
 		pet.Energy = 28    // Low
 		pet.Health = 26    // Low
 		// Happiness is lowest, so should show sad
-		if status := getStatus(pet); status != "😸😿" {
+		if status := GetStatus(pet); status != "😸😿" {
 			t.Errorf("Expected 😸😿 (sad for lowest happiness), got %s", status)
 		}
 	})
 
 	t.Run("Responded event shows normal activity", func(t *testing.T) {
 		currentTime := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
-		originalTimeNow := timeNow
-		timeNow = func() time.Time { return currentTime }
-		defer func() { timeNow = originalTimeNow }()
+		originalTimeNow := TimeNow
+		TimeNow = func() time.Time { return currentTime }
+		defer func() { TimeNow = originalTimeNow }()
 
-		pet := newPet(nil)
+		pet := NewPet(nil)
 		pet.CurrentEvent = &Event{
 			Type:      EventChasing,
 			StartTime: currentTime,
@@ -918,7 +1049,7 @@ func TestGetStatus(t *testing.T) {
 			Responded: true, // Already responded
 		}
 		// Should show normal awake status since event is responded
-		if status := getStatus(pet); status != "😸" {
+		if status := GetStatus(pet); status != "😸" {
 			t.Errorf("Expected 😸 (responded event shows normal), got %s", status)
 		}
 	})
@@ -930,7 +1061,7 @@ func TestNewPetLogging(t *testing.T) {
 
 	currentTime := mockTimeNow(t)
 
-	pet := newPet(nil)
+	pet := NewPet(nil)
 
 	if len(pet.Logs) != 1 {
 		t.Fatalf("New pet should have initial log entry, got %d entries", len(pet.Logs))
@@ -950,22 +1081,22 @@ func TestStatusLogging(t *testing.T) {
 	defer cleanup()
 
 	t.Run("Multiple status changes", func(t *testing.T) {
-		pet := newPet(nil)
+		pet := NewPet(nil)
 		initialStatus := pet.LastStatus
 
 		// First change: Make pet hungry (lowest stat)
 		pet.Hunger = 20
-		saveState(&pet)
+		SaveState(&pet)
 
 		// Second change: Make pet more tired than hungry (new lowest stat)
 		pet.Energy = 15
-		saveState(&pet)
+		SaveState(&pet)
 
 		// Third change: Restore stats and make pet sleep
 		pet.Hunger = 50
 		pet.Energy = 50
 		pet.Sleeping = true
-		saveState(&pet)
+		SaveState(&pet)
 
 		if len(pet.Logs) != 4 { // Initial + 3 changes
 			t.Fatalf("Expected 4 log entries, got %d", len(pet.Logs))
@@ -995,9 +1126,9 @@ func TestStatusLogging(t *testing.T) {
 	})
 
 	t.Run("Single status change", func(t *testing.T) {
-		pet := newPet(nil)
+		pet := NewPet(nil)
 		pet.Hunger = 20 // Should trigger hungry status
-		saveState(&pet)
+		SaveState(&pet)
 
 		if len(pet.Logs) != 2 {
 			t.Fatalf("Expected 2 log entries, got %d", len(pet.Logs))
@@ -1013,12 +1144,12 @@ func TestStatusLogging(t *testing.T) {
 	})
 
 	t.Run("No status change", func(t *testing.T) {
-		pet := newPet(nil)
+		pet := NewPet(nil)
 		initialLogCount := len(pet.Logs)
 
 		// No actual status change
 		pet.Happiness = 95
-		saveState(&pet)
+		SaveState(&pet)
 
 		if len(pet.Logs) != initialLogCount {
 			t.Error("Should not create new log entry when status doesn't change")
@@ -1027,16 +1158,16 @@ func TestStatusLogging(t *testing.T) {
 
 	t.Run("Loading existing state with logs", func(t *testing.T) {
 		// Create pet with existing logs
-		pet := newPet(nil)
+		pet := NewPet(nil)
 		pet.Hunger = 20
-		saveState(&pet)
+		SaveState(&pet)
 		initialLogCount := len(pet.Logs)
 
 		// Load state and make new change
-		loadedPet := loadState()
+		loadedPet := LoadState()
 		loadedPet.Hunger = 50 // Reset hunger above threshold
 		loadedPet.Energy = 20 // Now energy is the lowest stat
-		saveState(&loadedPet)
+		SaveState(&loadedPet)
 
 		if len(loadedPet.Logs) != initialLogCount+1 {
 			t.Errorf("Should append new log entries, expected %d got %d",
@@ -1052,16 +1183,16 @@ func TestAging(t *testing.T) {
 	t.Run("Age increases over time", func(t *testing.T) {
 		// Set current time
 		currentTime := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
-		originalTimeNow := timeNow
-		timeNow = func() time.Time { return currentTime }
-		defer func() { timeNow = originalTimeNow }()
+		originalTimeNow := TimeNow
+		TimeNow = func() time.Time { return currentTime }
+		defer func() { TimeNow = originalTimeNow }()
 
 		// Create pet 5 hours ago
 		fiveHoursAgo := currentTime.Add(-5 * time.Hour)
 		testCfg := &TestConfig{
 			LastSavedTime: fiveHoursAgo,
 		}
-		pet := newPet(testCfg)
+		pet := NewPet(testCfg)
 
 		// Set age directly to avoid double-counting
 		pet.Age = 0
@@ -1072,10 +1203,10 @@ func TestAging(t *testing.T) {
 			OldStatus: "",
 			NewStatus: "😸 Happy",
 		}}
-		saveState(&pet)
+		SaveState(&pet)
 
 		// Fix the LastSaved time in the saved file
-		data, err := os.ReadFile(testConfigPath)
+		data, err := os.ReadFile(TestConfigPath)
 		if err != nil {
 			t.Fatalf("Failed to read test file: %v", err)
 		}
@@ -1089,12 +1220,12 @@ func TestAging(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to marshal pet: %v", err)
 		}
-		if err := os.WriteFile(testConfigPath, data, 0644); err != nil {
+		if err := os.WriteFile(TestConfigPath, data, 0644); err != nil {
 			t.Fatalf("Failed to write test file: %v", err)
 		}
 
 		// Load state which will process elapsed time
-		loadedPet := loadState()
+		loadedPet := LoadState()
 
 		if loadedPet.Age != 5 {
 			t.Errorf("Expected age to be 5 hours, got %d", loadedPet.Age)
@@ -1104,9 +1235,9 @@ func TestAging(t *testing.T) {
 	t.Run("Life stages transition correctly", func(t *testing.T) {
 		// Set current time
 		currentTime := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
-		originalTimeNow := timeNow
-		timeNow = func() time.Time { return currentTime }
-		defer func() { timeNow = originalTimeNow }()
+		originalTimeNow := TimeNow
+		TimeNow = func() time.Time { return currentTime }
+		defer func() { TimeNow = originalTimeNow }()
 
 		testCases := []struct {
 			hours     int
@@ -1130,7 +1261,7 @@ func TestAging(t *testing.T) {
 				testCfg := &TestConfig{
 					LastSavedTime: birthTime,
 				}
-				pet := newPet(testCfg)
+				pet := NewPet(testCfg)
 
 				// Reset age and life stage to ensure they're calculated correctly
 				pet.Age = 0
@@ -1144,10 +1275,10 @@ func TestAging(t *testing.T) {
 				}}
 
 				// Save with these initial values
-				saveState(&pet)
+				SaveState(&pet)
 
 				// Modify the saved file to ensure LastSaved is exactly at birth time
-				data, err := os.ReadFile(testConfigPath)
+				data, err := os.ReadFile(TestConfigPath)
 				if err != nil {
 					t.Fatalf("Failed to read test file: %v", err)
 				}
@@ -1162,12 +1293,12 @@ func TestAging(t *testing.T) {
 				if err != nil {
 					t.Fatalf("Failed to marshal pet: %v", err)
 				}
-				if err := os.WriteFile(testConfigPath, data, 0644); err != nil {
+				if err := os.WriteFile(TestConfigPath, data, 0644); err != nil {
 					t.Fatalf("Failed to write test file: %v", err)
 				}
 
 				// Now load the pet, which should calculate age based on elapsed time
-				loadedPet := loadState()
+				loadedPet := LoadState()
 
 				if loadedPet.Age != tc.hours {
 					t.Errorf("Expected age %d, got %d", tc.hours, loadedPet.Age)
@@ -1186,10 +1317,10 @@ func TestDeathLogging(t *testing.T) {
 	cleanup := setupTestFile(t)
 	defer cleanup()
 
-	pet := newPet(nil)
+	pet := NewPet(nil)
 	pet.Dead = true
 	pet.CauseOfDeath = "Old Age"
-	saveState(&pet)
+	SaveState(&pet)
 
 	if len(pet.Logs) < 1 {
 		t.Fatal("Should have death log entry")
@@ -1206,21 +1337,21 @@ func TestStatCalculationPrecision(t *testing.T) {
 	defer cleanup()
 
 	// Save original functions and restore after test
-	originalTimeNow := timeNow
-	originalRandFloat64 := randFloat64
+	originalTimeNow := TimeNow
+	originalRandFloat64 := RandFloat64
 	defer func() {
-		timeNow = originalTimeNow
-		randFloat64 = originalRandFloat64
+		TimeNow = originalTimeNow
+		RandFloat64 = originalRandFloat64
 	}()
 
 	// Prevent random illness/events from interfering
-	randFloat64 = func() float64 { return 1.0 }
+	RandFloat64 = func() float64 { return 1.0 }
 
 	t.Run("Short elapsed time updates stats correctly", func(t *testing.T) {
 		// This tests the floating-point fix - previously int(elapsed.Minutes()) truncated small intervals
 		currentTime := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
 		threeSecondsAgo := currentTime.Add(-3 * time.Second) // Typical tmux update interval
-		timeNow = func() time.Time { return currentTime }
+		TimeNow = func() time.Time { return currentTime }
 
 		testCfg := &TestConfig{
 			InitialHunger:    100,
@@ -1229,18 +1360,18 @@ func TestStatCalculationPrecision(t *testing.T) {
 			Health:           100,
 			LastSavedTime:    threeSecondsAgo,
 		}
-		pet := newPet(testCfg)
-		saveState(&pet)
+		pet := NewPet(testCfg)
+		SaveState(&pet)
 
 		// Fix LastSaved time in file
-		data, _ := os.ReadFile(testConfigPath)
+		data, _ := os.ReadFile(TestConfigPath)
 		var savedPet Pet
 		json.Unmarshal(data, &savedPet)
 		savedPet.LastSaved = threeSecondsAgo
 		data, _ = json.MarshalIndent(savedPet, "", "  ")
-		os.WriteFile(testConfigPath, data, 0644)
+		os.WriteFile(TestConfigPath, data, 0644)
 
-		loadedPet := loadState()
+		loadedPet := LoadState()
 
 		// 3 seconds = 0.000833 hours
 		// With 5/hr hunger rate: 0.000833 * 5 = 0.004 ≈ 0 (truncated)
@@ -1254,7 +1385,7 @@ func TestStatCalculationPrecision(t *testing.T) {
 		// Use local time noon which is active hours for Night Owl (10am-2am)
 		currentTime := time.Date(2024, 1, 1, 12, 0, 0, 0, time.Local)
 		oneHourAgo := currentTime.Add(-1 * time.Hour)
-		timeNow = func() time.Time { return currentTime }
+		TimeNow = func() time.Time { return currentTime }
 
 		testCfg := &TestConfig{
 			InitialHunger:    100,
@@ -1264,29 +1395,29 @@ func TestStatCalculationPrecision(t *testing.T) {
 			IsSleeping:       false,
 			LastSavedTime:    oneHourAgo,
 		}
-		pet := newPet(testCfg)
+		pet := NewPet(testCfg)
 		pet.Chronotype = ChronotypeNightOwl // Noon is active hours for Night Owl
 		pet.Traits = []Trait{}              // Clear traits for predictable results
-		saveState(&pet)
+		SaveState(&pet)
 
 		// Fix LastSaved time in file
-		data, _ := os.ReadFile(testConfigPath)
+		data, _ := os.ReadFile(TestConfigPath)
 		var savedPet Pet
 		json.Unmarshal(data, &savedPet)
 		savedPet.LastSaved = oneHourAgo
 		data, _ = json.MarshalIndent(savedPet, "", "  ")
-		os.WriteFile(testConfigPath, data, 0644)
+		os.WriteFile(TestConfigPath, data, 0644)
 
-		loadedPet := loadState()
+		loadedPet := LoadState()
 
 		// 1 hour awake: hunger -5, energy -2 (every 2 hours so ~2), happiness unchanged
-		expectedHunger := 100 - hungerDecreaseRate // 100 - 5 = 95
+		expectedHunger := 100 - HungerDecreaseRate // 100 - 5 = 95
 		if loadedPet.Hunger != expectedHunger {
 			t.Errorf("Expected hunger %d, got %d", expectedHunger, loadedPet.Hunger)
 		}
 
 		// Energy decreases every 2 hours, so 1 hour = 0.5 cycles = 2 energy loss
-		expectedEnergy := 100 - (energyDecreaseRate / 2) // 100 - 2 = 98
+		expectedEnergy := 100 - (EnergyDecreaseRate / 2) // 100 - 2 = 98
 		if loadedPet.Energy != expectedEnergy {
 			t.Errorf("Expected energy %d, got %d", expectedEnergy, loadedPet.Energy)
 		}
@@ -1296,7 +1427,7 @@ func TestStatCalculationPrecision(t *testing.T) {
 		// Use local time noon which is active hours for Night Owl (no recovery boost)
 		currentTime := time.Date(2024, 1, 1, 12, 0, 0, 0, time.Local)
 		thirtyMinutesAgo := currentTime.Add(-30 * time.Minute)
-		timeNow = func() time.Time { return currentTime }
+		TimeNow = func() time.Time { return currentTime }
 
 		testCfg := &TestConfig{
 			InitialHunger:    100,
@@ -1306,24 +1437,24 @@ func TestStatCalculationPrecision(t *testing.T) {
 			IsSleeping:       true,
 			LastSavedTime:    thirtyMinutesAgo,
 		}
-		pet := newPet(testCfg)
+		pet := NewPet(testCfg)
 		pet.Chronotype = ChronotypeNightOwl // Noon is active hours (no sleep recovery boost)
-		saveState(&pet)
+		SaveState(&pet)
 
 		// Fix LastSaved time in file
-		data, _ := os.ReadFile(testConfigPath)
+		data, _ := os.ReadFile(TestConfigPath)
 		var savedPet Pet
 		json.Unmarshal(data, &savedPet)
 		savedPet.LastSaved = thirtyMinutesAgo
 		data, _ = json.MarshalIndent(savedPet, "", "  ")
-		os.WriteFile(testConfigPath, data, 0644)
+		os.WriteFile(TestConfigPath, data, 0644)
 
-		loadedPet := loadState()
+		loadedPet := LoadState()
 
 		// 30 minutes = 0.5 hours
 		// Energy recovery: 0.5 * 10 = 5
 		// Hunger (sleeping): 0.5 * 3 = 1.5 → 1
-		expectedEnergy := min(50+5, maxStat) // 55
+		expectedEnergy := min(50+5, MaxStat) // 55
 		if loadedPet.Energy != expectedEnergy {
 			t.Errorf("Expected energy %d after 30min sleep, got %d", expectedEnergy, loadedPet.Energy)
 		}
@@ -1337,7 +1468,7 @@ func TestStatCalculationPrecision(t *testing.T) {
 	t.Run("Happiness decay when stats low", func(t *testing.T) {
 		currentTime := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
 		twoHoursAgo := currentTime.Add(-2 * time.Hour)
-		timeNow = func() time.Time { return currentTime }
+		TimeNow = func() time.Time { return currentTime }
 
 		testCfg := &TestConfig{
 			InitialHunger:    20, // Below threshold (30)
@@ -1347,21 +1478,21 @@ func TestStatCalculationPrecision(t *testing.T) {
 			IsSleeping:       false,
 			LastSavedTime:    twoHoursAgo,
 		}
-		pet := newPet(testCfg)
-		saveState(&pet)
+		pet := NewPet(testCfg)
+		SaveState(&pet)
 
 		// Fix LastSaved time in file
-		data, _ := os.ReadFile(testConfigPath)
+		data, _ := os.ReadFile(TestConfigPath)
 		var savedPet Pet
 		json.Unmarshal(data, &savedPet)
 		savedPet.LastSaved = twoHoursAgo
 		data, _ = json.MarshalIndent(savedPet, "", "  ")
-		os.WriteFile(testConfigPath, data, 0644)
+		os.WriteFile(TestConfigPath, data, 0644)
 
-		loadedPet := loadState()
+		loadedPet := LoadState()
 
 		// 2 hours with low hunger: happiness decreases 2 * 2 = 4
-		expectedHappiness := 100 - (2 * happinessDecreaseRate) // 100 - 4 = 96
+		expectedHappiness := 100 - (2 * HappinessDecreaseRate) // 100 - 4 = 96
 		if loadedPet.Happiness != expectedHappiness {
 			t.Errorf("Expected happiness %d, got %d", expectedHappiness, loadedPet.Happiness)
 		}
@@ -1370,7 +1501,7 @@ func TestStatCalculationPrecision(t *testing.T) {
 	t.Run("Health decay with critically low stats", func(t *testing.T) {
 		currentTime := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
 		threeHoursAgo := currentTime.Add(-3 * time.Hour)
-		timeNow = func() time.Time { return currentTime }
+		TimeNow = func() time.Time { return currentTime }
 
 		testCfg := &TestConfig{
 			InitialHunger:    10, // Below 15 (critical)
@@ -1380,22 +1511,22 @@ func TestStatCalculationPrecision(t *testing.T) {
 			IsSleeping:       false,
 			LastSavedTime:    threeHoursAgo,
 		}
-		pet := newPet(testCfg)
+		pet := NewPet(testCfg)
 		pet.Traits = []Trait{} // Clear traits for predictable results
-		saveState(&pet)
+		SaveState(&pet)
 
 		// Fix LastSaved time in file
-		data, _ := os.ReadFile(testConfigPath)
+		data, _ := os.ReadFile(TestConfigPath)
 		var savedPet Pet
 		json.Unmarshal(data, &savedPet)
 		savedPet.LastSaved = threeHoursAgo
 		data, _ = json.MarshalIndent(savedPet, "", "  ")
-		os.WriteFile(testConfigPath, data, 0644)
+		os.WriteFile(TestConfigPath, data, 0644)
 
-		loadedPet := loadState()
+		loadedPet := LoadState()
 
 		// 3 hours with critically low hunger: health decreases 3 * 2 = 6
-		expectedHealth := 100 - (3 * healthDecreaseRate) // 100 - 6 = 94
+		expectedHealth := 100 - (3 * HealthDecreaseRate) // 100 - 6 = 94
 		if loadedPet.Health != expectedHealth {
 			t.Errorf("Expected health %d, got %d", expectedHealth, loadedPet.Health)
 		}
@@ -1407,11 +1538,11 @@ func TestActionRefusal(t *testing.T) {
 	defer cleanup()
 
 	// Save original functions and restore after test
-	originalTimeNow := timeNow
-	defer func() { timeNow = originalTimeNow }()
+	originalTimeNow := TimeNow
+	defer func() { TimeNow = originalTimeNow }()
 
 	currentTime := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
-	timeNow = func() time.Time { return currentTime }
+	TimeNow = func() time.Time { return currentTime }
 
 	t.Run("Feed refused when too full", func(t *testing.T) {
 		testCfg := &TestConfig{
@@ -1457,7 +1588,7 @@ func TestActionRefusal(t *testing.T) {
 		testCfg := &TestConfig{
 			InitialHunger:    50,
 			InitialHappiness: 50,
-			InitialEnergy:    autoSleepThreshold - 1, // Below threshold (19)
+			InitialEnergy:    AutoSleepThreshold - 1, // Below threshold (19)
 			Health:           50,
 			LastSavedTime:    currentTime,
 		}
@@ -1592,26 +1723,26 @@ func TestLifeEvents(t *testing.T) {
 	defer cleanup()
 
 	// Save original functions and restore after test
-	originalTimeNow := timeNow
-	originalRandFloat64 := randFloat64
+	originalTimeNow := TimeNow
+	originalRandFloat64 := RandFloat64
 	defer func() {
-		timeNow = originalTimeNow
-		randFloat64 = originalRandFloat64
+		TimeNow = originalTimeNow
+		RandFloat64 = originalRandFloat64
 	}()
 
 	t.Run("Event triggers when conditions met", func(t *testing.T) {
 		currentTime := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
-		timeNow = func() time.Time { return currentTime }
+		TimeNow = func() time.Time { return currentTime }
 		// High chance roll to trigger event
-		randFloat64 = func() float64 { return 0.01 } // Very low = high chance
+		RandFloat64 = func() float64 { return 0.01 } // Very low = high chance
 
-		pet := newPet(nil)
+		pet := NewPet(nil)
 		pet.Sleeping = false
 		pet.Energy = 50
 		pet.Mood = "playful"
 		pet.CurrentEvent = nil
 
-		triggerRandomEvent(&pet)
+		TriggerRandomEvent(&pet)
 
 		if pet.CurrentEvent == nil {
 			t.Error("Expected event to trigger")
@@ -1620,10 +1751,10 @@ func TestLifeEvents(t *testing.T) {
 
 	t.Run("No event trigger when one is active", func(t *testing.T) {
 		currentTime := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
-		timeNow = func() time.Time { return currentTime }
-		randFloat64 = func() float64 { return 0.01 }
+		TimeNow = func() time.Time { return currentTime }
+		RandFloat64 = func() float64 { return 0.01 }
 
-		pet := newPet(nil)
+		pet := NewPet(nil)
 		// Set up existing active event
 		existingEvent := &Event{
 			Type:      EventChasing,
@@ -1633,7 +1764,7 @@ func TestLifeEvents(t *testing.T) {
 		}
 		pet.CurrentEvent = existingEvent
 
-		triggerRandomEvent(&pet)
+		TriggerRandomEvent(&pet)
 
 		// Should still be the same event
 		if pet.CurrentEvent.Type != EventChasing {
@@ -1643,11 +1774,11 @@ func TestLifeEvents(t *testing.T) {
 
 	t.Run("Expired ignored event applies consequences", func(t *testing.T) {
 		currentTime := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
-		timeNow = func() time.Time { return currentTime }
+		TimeNow = func() time.Time { return currentTime }
 		// High roll to prevent new event
-		randFloat64 = func() float64 { return 0.99 }
+		RandFloat64 = func() float64 { return 0.99 }
 
-		pet := newPet(nil)
+		pet := NewPet(nil)
 		pet.Happiness = 50 // Will lose 15 from scared event
 		// Set up expired, unresponded scared event
 		expiredEvent := &Event{
@@ -1658,7 +1789,7 @@ func TestLifeEvents(t *testing.T) {
 		}
 		pet.CurrentEvent = expiredEvent
 
-		triggerRandomEvent(&pet)
+		TriggerRandomEvent(&pet)
 
 		// Scared event penalty: -15 happiness
 		if pet.Happiness != 35 {
@@ -1675,9 +1806,9 @@ func TestLifeEvents(t *testing.T) {
 
 	t.Run("Respond to event gives reward", func(t *testing.T) {
 		currentTime := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
-		timeNow = func() time.Time { return currentTime }
+		TimeNow = func() time.Time { return currentTime }
 
-		pet := newPet(nil)
+		pet := NewPet(nil)
 		pet.Happiness = 50
 		// Set up active cuddles event
 		pet.CurrentEvent = &Event{
@@ -1687,7 +1818,7 @@ func TestLifeEvents(t *testing.T) {
 			Responded: false,
 		}
 
-		result := pet.respondToEvent()
+		result := pet.RespondToEvent()
 
 		// Cuddles gives +25 happiness, +5 energy
 		if pet.Happiness != 75 {
@@ -1709,9 +1840,9 @@ func TestLifeEvents(t *testing.T) {
 
 	t.Run("Cannot respond to already responded event", func(t *testing.T) {
 		currentTime := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
-		timeNow = func() time.Time { return currentTime }
+		TimeNow = func() time.Time { return currentTime }
 
-		pet := newPet(nil)
+		pet := NewPet(nil)
 		pet.Happiness = 50
 		pet.CurrentEvent = &Event{
 			Type:      EventCuddles,
@@ -1720,7 +1851,7 @@ func TestLifeEvents(t *testing.T) {
 			Responded: true, // Already responded
 		}
 
-		result := pet.respondToEvent()
+		result := pet.RespondToEvent()
 
 		if result != "" {
 			t.Error("Should not be able to respond to already responded event")
@@ -1733,9 +1864,9 @@ func TestLifeEvents(t *testing.T) {
 
 	t.Run("Event log limited to 20 entries", func(t *testing.T) {
 		currentTime := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
-		timeNow = func() time.Time { return currentTime }
+		TimeNow = func() time.Time { return currentTime }
 
-		pet := newPet(nil)
+		pet := NewPet(nil)
 		// Fill event log with 25 entries
 		for i := 0; i < 25; i++ {
 			pet.EventLog = append(pet.EventLog, EventLogEntry{
@@ -1752,7 +1883,7 @@ func TestLifeEvents(t *testing.T) {
 			ExpiresAt: currentTime.Add(10 * time.Minute),
 			Responded: false,
 		}
-		pet.respondToEvent()
+		pet.RespondToEvent()
 
 		if len(pet.EventLog) > 20 {
 			t.Errorf("Event log should be limited to 20 entries, got %d", len(pet.EventLog))
@@ -1761,25 +1892,25 @@ func TestLifeEvents(t *testing.T) {
 
 	t.Run("Dead pet gets no events", func(t *testing.T) {
 		currentTime := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
-		timeNow = func() time.Time { return currentTime }
-		randFloat64 = func() float64 { return 0.01 } // Would trigger
+		TimeNow = func() time.Time { return currentTime }
+		RandFloat64 = func() float64 { return 0.01 } // Would trigger
 
-		pet := newPet(nil)
+		pet := NewPet(nil)
 		pet.Dead = true
 		pet.CurrentEvent = nil
 
-		triggerRandomEvent(&pet)
+		TriggerRandomEvent(&pet)
 
 		if pet.CurrentEvent != nil {
 			t.Error("Dead pet should not get events")
 		}
 	})
 
-	t.Run("getEventDisplay returns correct info for active event", func(t *testing.T) {
+	t.Run("GetEventDisplay returns correct info for active event", func(t *testing.T) {
 		currentTime := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
-		timeNow = func() time.Time { return currentTime }
+		TimeNow = func() time.Time { return currentTime }
 
-		pet := newPet(nil)
+		pet := NewPet(nil)
 		pet.CurrentEvent = &Event{
 			Type:      EventChasing,
 			StartTime: currentTime,
@@ -1787,7 +1918,7 @@ func TestLifeEvents(t *testing.T) {
 			Responded: false,
 		}
 
-		emoji, msg, hasEvent := pet.getEventDisplay()
+		emoji, msg, hasEvent := pet.GetEventDisplay()
 
 		if !hasEvent {
 			t.Error("Expected hasEvent to be true")
@@ -1800,11 +1931,11 @@ func TestLifeEvents(t *testing.T) {
 		}
 	})
 
-	t.Run("getEventDisplay returns false for expired event", func(t *testing.T) {
+	t.Run("GetEventDisplay returns false for expired event", func(t *testing.T) {
 		currentTime := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
-		timeNow = func() time.Time { return currentTime }
+		TimeNow = func() time.Time { return currentTime }
 
-		pet := newPet(nil)
+		pet := NewPet(nil)
 		pet.CurrentEvent = &Event{
 			Type:      EventChasing,
 			StartTime: currentTime.Add(-15 * time.Minute),
@@ -1812,7 +1943,7 @@ func TestLifeEvents(t *testing.T) {
 			Responded: false,
 		}
 
-		_, _, hasEvent := pet.getEventDisplay()
+		_, _, hasEvent := pet.GetEventDisplay()
 
 		if hasEvent {
 			t.Error("Expected hasEvent to be false for expired event")
@@ -1825,25 +1956,25 @@ func TestAutonomousBehavior(t *testing.T) {
 	defer cleanup()
 
 	// Save original functions and restore after test
-	originalTimeNow := timeNow
-	originalRandFloat64 := randFloat64
+	originalTimeNow := TimeNow
+	originalRandFloat64 := RandFloat64
 	defer func() {
-		timeNow = originalTimeNow
-		randFloat64 = originalRandFloat64
+		TimeNow = originalTimeNow
+		RandFloat64 = originalRandFloat64
 	}()
 
 	t.Run("Auto-sleep when energy critical", func(t *testing.T) {
 		currentTime := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
-		timeNow = func() time.Time { return currentTime }
+		TimeNow = func() time.Time { return currentTime }
 
-		pet := newPet(nil)
-		pet.Energy = autoSleepThreshold // At threshold (20)
+		pet := NewPet(nil)
+		pet.Energy = AutoSleepThreshold // At threshold (20)
 		pet.Sleeping = false
 
-		applyAutonomousBehavior(&pet)
+		ApplyAutonomousBehavior(&pet)
 
 		if !pet.Sleeping {
-			t.Error("Pet should auto-sleep when energy <= autoSleepThreshold")
+			t.Error("Pet should auto-sleep when energy <= AutoSleepThreshold")
 		}
 		if pet.AutoSleepTime == nil {
 			t.Error("AutoSleepTime should be set when auto-sleeping")
@@ -1853,17 +1984,17 @@ func TestAutonomousBehavior(t *testing.T) {
 	t.Run("No auto-sleep above threshold", func(t *testing.T) {
 		// Use local time 12:00 which is active hours for Night Owl (10am-2am)
 		currentTime := time.Date(2024, 1, 1, 12, 0, 0, 0, time.Local)
-		timeNow = func() time.Time { return currentTime }
+		TimeNow = func() time.Time { return currentTime }
 
-		pet := newPet(nil)
+		pet := NewPet(nil)
 		pet.Chronotype = ChronotypeNightOwl // Ensure 12:00 local is in active hours
-		pet.Energy = autoSleepThreshold + 1 // Above threshold
+		pet.Energy = AutoSleepThreshold + 1 // Above threshold
 		pet.Sleeping = false
 
-		applyAutonomousBehavior(&pet)
+		ApplyAutonomousBehavior(&pet)
 
 		if pet.Sleeping {
-			t.Error("Pet should not auto-sleep when energy > autoSleepThreshold")
+			t.Error("Pet should not auto-sleep when energy > AutoSleepThreshold")
 		}
 	})
 
@@ -1871,15 +2002,15 @@ func TestAutonomousBehavior(t *testing.T) {
 		// Use local time 12:00 which is active hours for Night Owl (10am-2am)
 		currentTime := time.Date(2024, 1, 1, 12, 0, 0, 0, time.Local)
 		sleepStartTime := currentTime.Add(-7 * time.Hour) // 7 hours ago (> minSleepDuration of 6)
-		timeNow = func() time.Time { return currentTime }
+		TimeNow = func() time.Time { return currentTime }
 
-		pet := newPet(nil)
+		pet := NewPet(nil)
 		pet.Chronotype = ChronotypeNightOwl // Ensure 12:00 local is in active hours
 		pet.Sleeping = true
 		pet.AutoSleepTime = &sleepStartTime
-		pet.Energy = autoWakeEnergy // Energy restored (80)
+		pet.Energy = AutoWakeEnergy // Energy restored (80)
 
-		applyAutonomousBehavior(&pet)
+		ApplyAutonomousBehavior(&pet)
 
 		if pet.Sleeping {
 			t.Error("Pet should auto-wake after minimum sleep duration with restored energy")
@@ -1892,14 +2023,14 @@ func TestAutonomousBehavior(t *testing.T) {
 	t.Run("No auto-wake before minimum sleep duration", func(t *testing.T) {
 		currentTime := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
 		sleepStartTime := currentTime.Add(-4 * time.Hour) // Only 4 hours (< minSleepDuration of 6)
-		timeNow = func() time.Time { return currentTime }
+		TimeNow = func() time.Time { return currentTime }
 
-		pet := newPet(nil)
+		pet := NewPet(nil)
 		pet.Sleeping = true
 		pet.AutoSleepTime = &sleepStartTime
-		pet.Energy = maxStat // Full energy
+		pet.Energy = MaxStat // Full energy
 
-		applyAutonomousBehavior(&pet)
+		ApplyAutonomousBehavior(&pet)
 
 		if !pet.Sleeping {
 			t.Error("Pet should not wake before minimum sleep duration")
@@ -1909,14 +2040,14 @@ func TestAutonomousBehavior(t *testing.T) {
 	t.Run("Force wake after maximum sleep duration", func(t *testing.T) {
 		currentTime := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
 		sleepStartTime := currentTime.Add(-9 * time.Hour) // 9 hours (> maxSleepDuration of 8)
-		timeNow = func() time.Time { return currentTime }
+		TimeNow = func() time.Time { return currentTime }
 
-		pet := newPet(nil)
+		pet := NewPet(nil)
 		pet.Sleeping = true
 		pet.AutoSleepTime = &sleepStartTime
 		pet.Energy = 50 // Energy not fully restored
 
-		applyAutonomousBehavior(&pet)
+		ApplyAutonomousBehavior(&pet)
 
 		if pet.Sleeping {
 			t.Error("Pet should force wake after maximum sleep duration")
@@ -1925,13 +2056,13 @@ func TestAutonomousBehavior(t *testing.T) {
 
 	t.Run("Mood initialization", func(t *testing.T) {
 		currentTime := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
-		timeNow = func() time.Time { return currentTime }
-		randFloat64 = func() float64 { return 0.5 } // Deterministic
+		TimeNow = func() time.Time { return currentTime }
+		RandFloat64 = func() float64 { return 0.5 } // Deterministic
 
-		pet := newPet(nil)
+		pet := NewPet(nil)
 		pet.Mood = "" // Unset mood
 
-		applyAutonomousBehavior(&pet)
+		ApplyAutonomousBehavior(&pet)
 
 		if pet.Mood == "" {
 			t.Error("Mood should be initialized if empty")
@@ -1944,14 +2075,14 @@ func TestAutonomousBehavior(t *testing.T) {
 	t.Run("Mood changes when expired", func(t *testing.T) {
 		currentTime := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
 		expiredTime := currentTime.Add(-1 * time.Hour) // Expired 1 hour ago
-		timeNow = func() time.Time { return currentTime }
-		randFloat64 = func() float64 { return 0.75 } // Will trigger "playful" for rested/happy pet
+		TimeNow = func() time.Time { return currentTime }
+		RandFloat64 = func() float64 { return 0.75 } // Will trigger "playful" for rested/happy pet
 
-		pet := newPet(nil)
+		pet := NewPet(nil)
 		pet.Mood = "normal"
 		pet.MoodExpiresAt = &expiredTime
 
-		applyAutonomousBehavior(&pet)
+		ApplyAutonomousBehavior(&pet)
 
 		if pet.MoodExpiresAt == nil || !pet.MoodExpiresAt.After(currentTime) {
 			t.Error("MoodExpiresAt should be updated to future time")
@@ -1960,15 +2091,15 @@ func TestAutonomousBehavior(t *testing.T) {
 
 	t.Run("Tired pet more likely to be lazy", func(t *testing.T) {
 		currentTime := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
-		timeNow = func() time.Time { return currentTime }
-		randFloat64 = func() float64 { return 0.3 } // < 0.6 = lazy when tired
+		TimeNow = func() time.Time { return currentTime }
+		RandFloat64 = func() float64 { return 0.3 } // < 0.6 = lazy when tired
 
-		pet := newPet(nil)
-		pet.Energy = drowsyThreshold - 1 // Below drowsy threshold
+		pet := NewPet(nil)
+		pet.Energy = DrowsyThreshold - 1 // Below drowsy threshold
 		pet.Mood = ""
 		pet.MoodExpiresAt = nil
 
-		applyAutonomousBehavior(&pet)
+		ApplyAutonomousBehavior(&pet)
 
 		if pet.Mood != "lazy" {
 			t.Errorf("Expected 'lazy' mood for tired pet with low roll, got '%s'", pet.Mood)
@@ -1977,14 +2108,14 @@ func TestAutonomousBehavior(t *testing.T) {
 
 	t.Run("Dead pet skips auto-sleep", func(t *testing.T) {
 		currentTime := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
-		timeNow = func() time.Time { return currentTime }
+		TimeNow = func() time.Time { return currentTime }
 
-		pet := newPet(nil)
+		pet := NewPet(nil)
 		pet.Dead = true
 		pet.Energy = 0
 		pet.Sleeping = false
 
-		applyAutonomousBehavior(&pet)
+		ApplyAutonomousBehavior(&pet)
 
 		if pet.Sleeping {
 			t.Error("Dead pet should not auto-sleep")
@@ -1999,9 +2130,9 @@ func TestBondingSystem(t *testing.T) {
 	currentTime := mockTimeNow(t)
 
 	t.Run("New pet starts with initial bond", func(t *testing.T) {
-		pet := newPet(nil)
-		if pet.Bond != initialBond {
-			t.Errorf("Expected initial bond %d, got %d", initialBond, pet.Bond)
+		pet := NewPet(nil)
+		if pet.Bond != InitialBond {
+			t.Errorf("Expected initial bond %d, got %d", InitialBond, pet.Bond)
 		}
 	})
 
@@ -2011,15 +2142,15 @@ func TestBondingSystem(t *testing.T) {
 			expectedMin float64
 			expectedMax float64
 		}{
-			{0, minBondMultiplier, minBondMultiplier + 0.01}, // 0.5
+			{0, MinBondMultiplier, MinBondMultiplier + 0.01}, // 0.5
 			{50, 0.74, 0.76}, // 0.75
-			{100, maxBondMultiplier - 0.01, maxBondMultiplier}, // 1.0
+			{100, MaxBondMultiplier - 0.01, MaxBondMultiplier}, // 1.0
 		}
 
 		for _, tc := range testCases {
-			pet := newPet(nil)
+			pet := NewPet(nil)
 			pet.Bond = tc.bond
-			multiplier := pet.getBondMultiplier()
+			multiplier := pet.GetBondMultiplier()
 
 			if multiplier < tc.expectedMin || multiplier > tc.expectedMax {
 				t.Errorf("Bond %d: expected multiplier between %.2f and %.2f, got %.2f",
@@ -2037,18 +2168,18 @@ func TestBondingSystem(t *testing.T) {
 			LastSavedTime:    currentTime,
 		}
 		m := initialModel(testCfg)
-		m.pet.Bond = initialBond
+		m.pet.Bond = InitialBond
 		m.pet.Traits = []Trait{} // Clear traits for predictable results
-		initialBondLevel := m.pet.Bond
+		InitialBondLevel := m.pet.Bond
 
 		m.feed()
 
-		// Should gain bondGainWellTimed (2) for well-timed feeding
+		// Should gain BondGainWellTimed (2) for well-timed feeding
 		// The check is: if recentFeeds == 0 && p.Hunger < 50
 		// But Hunger is checked AFTER the feeding gain
 		// So we need Hunger to be < 20 initially so after +30 it's still < 50
 		// Actually looking at code again... let me verify the logic
-		expectedBond := initialBondLevel + bondGainWellTimed
+		expectedBond := InitialBondLevel + BondGainWellTimed
 		if m.pet.Bond != expectedBond {
 			t.Errorf("Expected bond %d after well-timed feed, got %d (Hunger before: 45, after: %d)",
 				expectedBond, m.pet.Bond, m.pet.Hunger)
@@ -2064,13 +2195,13 @@ func TestBondingSystem(t *testing.T) {
 			LastSavedTime:    currentTime,
 		}
 		m := initialModel(testCfg)
-		m.pet.Bond = initialBond
-		initialBondLevel := m.pet.Bond
+		m.pet.Bond = InitialBond
+		InitialBondLevel := m.pet.Bond
 
 		m.feed()
 
-		// Should gain bondGainNormal (1) for normal feeding
-		expectedBond := initialBondLevel + bondGainNormal
+		// Should gain BondGainNormal (1) for normal feeding
+		expectedBond := InitialBondLevel + BondGainNormal
 		if m.pet.Bond != expectedBond {
 			t.Errorf("Expected bond %d after normal feed, got %d", expectedBond, m.pet.Bond)
 		}
@@ -2085,7 +2216,7 @@ func TestBondingSystem(t *testing.T) {
 			LastSavedTime:    currentTime,
 		}
 		m := initialModel(testCfg)
-		m.pet.Bond = initialBond
+		m.pet.Bond = InitialBond
 
 		// First feed - should increase bond
 		m.feed()
@@ -2108,13 +2239,13 @@ func TestBondingSystem(t *testing.T) {
 			LastSavedTime:    currentTime,
 		}
 		m := initialModel(testCfg)
-		m.pet.Bond = initialBond
-		initialBondLevel := m.pet.Bond
+		m.pet.Bond = InitialBond
+		InitialBondLevel := m.pet.Bond
 
 		m.play()
 
-		// Should gain bondGainWellTimed (2) for well-timed play
-		expectedBond := initialBondLevel + bondGainWellTimed
+		// Should gain BondGainWellTimed (2) for well-timed play
+		expectedBond := InitialBondLevel + BondGainWellTimed
 		if m.pet.Bond != expectedBond {
 			t.Errorf("Expected bond %d after well-timed play, got %d", expectedBond, m.pet.Bond)
 		}
@@ -2130,13 +2261,13 @@ func TestBondingSystem(t *testing.T) {
 			LastSavedTime:    currentTime,
 		}
 		m := initialModel(testCfg)
-		m.pet.Bond = initialBond
-		initialBondLevel := m.pet.Bond
+		m.pet.Bond = InitialBond
+		InitialBondLevel := m.pet.Bond
 
 		m.administerMedicine()
 
 		// Medicine always gives well-timed bond increase
-		expectedBond := initialBondLevel + bondGainWellTimed
+		expectedBond := InitialBondLevel + BondGainWellTimed
 		if m.pet.Bond != expectedBond {
 			t.Errorf("Expected bond %d after medicine, got %d", expectedBond, m.pet.Bond)
 		}
@@ -2200,9 +2331,9 @@ func TestBondingSystem(t *testing.T) {
 	})
 
 	t.Run("Bond decays from neglect", func(t *testing.T) {
-		originalRandFloat64 := randFloat64
-		randFloat64 = func() float64 { return 1.0 } // Prevent illness
-		defer func() { randFloat64 = originalRandFloat64 }()
+		originalRandFloat64 := RandFloat64
+		RandFloat64 = func() float64 { return 1.0 } // Prevent illness
+		defer func() { RandFloat64 = originalRandFloat64 }()
 
 		// Create pet with one interaction 36 hours ago (exceeds 24h threshold)
 		thirtySevenHoursAgo := currentTime.Add(-37 * time.Hour)
@@ -2213,22 +2344,22 @@ func TestBondingSystem(t *testing.T) {
 			Health:           100,
 			LastSavedTime:    thirtySevenHoursAgo,
 		}
-		pet := newPet(testCfg)
+		pet := NewPet(testCfg)
 		pet.Bond = 80
 		pet.LastInteractions = []Interaction{
 			{Type: "feed", Time: thirtySevenHoursAgo},
 		}
-		saveState(&pet)
+		SaveState(&pet)
 
 		// Fix LastSaved time in file
-		data, _ := os.ReadFile(testConfigPath)
+		data, _ := os.ReadFile(TestConfigPath)
 		var savedPet Pet
 		json.Unmarshal(data, &savedPet)
 		savedPet.LastSaved = thirtySevenHoursAgo
 		data, _ = json.MarshalIndent(savedPet, "", "  ")
-		os.WriteFile(testConfigPath, data, 0644)
+		os.WriteFile(TestConfigPath, data, 0644)
 
-		loadedPet := loadState()
+		loadedPet := LoadState()
 
 		// 37 hours since interaction - 24 threshold = 13 excess hours
 		// 13 / 12 = 1 complete period * bondDecayRate (1) = -1 bond
@@ -2248,21 +2379,21 @@ func TestBondingSystem(t *testing.T) {
 			Health:           100,
 			LastSavedTime:    fiftyHoursAgo,
 		}
-		pet := newPet(testCfg)
+		pet := NewPet(testCfg)
 		pet.Bond = 1
 		pet.LastInteractions = []Interaction{
 			{Type: "feed", Time: fiftyHoursAgo},
 		}
-		saveState(&pet)
+		SaveState(&pet)
 
-		data, _ := os.ReadFile(testConfigPath)
+		data, _ := os.ReadFile(TestConfigPath)
 		var savedPet Pet
 		json.Unmarshal(data, &savedPet)
 		savedPet.LastSaved = fiftyHoursAgo
 		data, _ = json.MarshalIndent(savedPet, "", "  ")
-		os.WriteFile(testConfigPath, data, 0644)
+		os.WriteFile(TestConfigPath, data, 0644)
 
-		loadedPet := loadState()
+		loadedPet := LoadState()
 
 		if loadedPet.Bond < 0 {
 			t.Errorf("Bond should not go below 0, got %d", loadedPet.Bond)
@@ -2278,24 +2409,24 @@ func TestBondingSystem(t *testing.T) {
 			LastSavedTime:    currentTime,
 		}
 		m := initialModel(testCfg)
-		m.pet.Bond = maxBond - 1
+		m.pet.Bond = MaxBond - 1
 
-		// Well-timed feed should try to add +2 but cap at maxBond
+		// Well-timed feed should try to add +2 but cap at MaxBond
 		m.feed()
 
-		if m.pet.Bond > maxBond {
-			t.Errorf("Bond should not exceed %d, got %d", maxBond, m.pet.Bond)
+		if m.pet.Bond > MaxBond {
+			t.Errorf("Bond should not exceed %d, got %d", MaxBond, m.pet.Bond)
 		}
-		if m.pet.Bond != maxBond {
-			t.Errorf("Expected bond to be capped at %d, got %d", maxBond, m.pet.Bond)
+		if m.pet.Bond != MaxBond {
+			t.Errorf("Expected bond to be capped at %d, got %d", MaxBond, m.pet.Bond)
 		}
 	})
 
 	t.Run("High bond reduces illness chance", func(t *testing.T) {
-		originalRandFloat64 := randFloat64
+		originalRandFloat64 := RandFloat64
 		// Set to value that would trigger illness normally (0.05 < 0.1)
-		randFloat64 = func() float64 { return 0.05 }
-		defer func() { randFloat64 = originalRandFloat64 }()
+		RandFloat64 = func() float64 { return 0.05 }
+		defer func() { RandFloat64 = originalRandFloat64 }()
 
 		oneHourAgo := currentTime.Add(-1 * time.Hour)
 
@@ -2308,19 +2439,19 @@ func TestBondingSystem(t *testing.T) {
 			Illness:          false,
 			LastSavedTime:    oneHourAgo,
 		}
-		pet1 := newPet(testCfg1)
+		pet1 := NewPet(testCfg1)
 		pet1.Bond = 30          // Below illness resistance threshold
 		pet1.Traits = []Trait{} // Clear traits for predictable results
-		saveState(&pet1)
+		SaveState(&pet1)
 
-		data1, _ := os.ReadFile(testConfigPath)
+		data1, _ := os.ReadFile(TestConfigPath)
 		var savedPet1 Pet
 		json.Unmarshal(data1, &savedPet1)
 		savedPet1.LastSaved = oneHourAgo
 		data1, _ = json.MarshalIndent(savedPet1, "", "  ")
-		os.WriteFile(testConfigPath, data1, 0644)
+		os.WriteFile(TestConfigPath, data1, 0644)
 
-		loadedPet1 := loadState()
+		loadedPet1 := LoadState()
 
 		if !loadedPet1.Illness {
 			t.Error("Low bond pet should get sick with random roll 0.05")
@@ -2338,22 +2469,22 @@ func TestBondingSystem(t *testing.T) {
 			Illness:          false,
 			LastSavedTime:    oneHourAgo,
 		}
-		pet2 := newPet(testCfg2)
+		pet2 := NewPet(testCfg2)
 		pet2.Bond = 85 // Above illness resistance threshold (70)
 		pet2.Traits = []Trait{}
-		saveState(&pet2)
+		SaveState(&pet2)
 
-		data2, _ := os.ReadFile(testConfigPath)
+		data2, _ := os.ReadFile(TestConfigPath)
 		var savedPet2 Pet
 		json.Unmarshal(data2, &savedPet2)
 		savedPet2.LastSaved = oneHourAgo
 		data2, _ = json.MarshalIndent(savedPet2, "", "  ")
-		os.WriteFile(testConfigPath, data2, 0644)
+		os.WriteFile(TestConfigPath, data2, 0644)
 
 		// With bond 85, reduction is 1.0 - (15/30 * 0.5) = 0.75
 		// Adjusted chance: 0.1 * 0.75 = 0.075
 		// Random 0.05 < 0.075, so should still get sick but with reduced chance
-		_ = loadState()
+		_ = LoadState()
 
 		// This test verifies the bond reduction is applied
 		// The actual illness outcome depends on the exact calculation
@@ -2398,20 +2529,20 @@ func TestBondingSystem(t *testing.T) {
 		}
 		m := initialModel(testCfg)
 
-		// Add more than maxInteractionHistory interactions
-		for i := 0; i < maxInteractionHistory+5; i++ {
+		// Add more than MaxInteractionHistory interactions
+		for i := 0; i < MaxInteractionHistory+5; i++ {
 			m.feed()
 			// Reset hunger after each feed to prevent refusal
 			m.pet.Hunger = 10
 		}
 
-		if len(m.pet.LastInteractions) > maxInteractionHistory {
+		if len(m.pet.LastInteractions) > MaxInteractionHistory {
 			t.Errorf("Interaction history should be limited to %d, got %d",
-				maxInteractionHistory, len(m.pet.LastInteractions))
+				MaxInteractionHistory, len(m.pet.LastInteractions))
 		}
-		if len(m.pet.LastInteractions) != maxInteractionHistory {
+		if len(m.pet.LastInteractions) != MaxInteractionHistory {
 			t.Errorf("Expected exactly %d interactions after overflow, got %d",
-				maxInteractionHistory, len(m.pet.LastInteractions))
+				MaxInteractionHistory, len(m.pet.LastInteractions))
 		}
 	})
 
@@ -2437,7 +2568,7 @@ func TestBondingSystem(t *testing.T) {
 		}
 
 		for _, tc := range testCases {
-			result := getBondDescription(tc.bond)
+			result := GetBondDescription(tc.bond)
 			if result != tc.expectedStr {
 				t.Errorf("Bond %d: expected '%s', got '%s'", tc.bond, tc.expectedStr, result)
 			}
@@ -2461,24 +2592,24 @@ func TestEvolution(t *testing.T) {
 			Health:           90,
 			LastSavedTime:    birthTime,
 		}
-		pet := newPet(testCfg)
-		saveState(&pet)
+		pet := NewPet(testCfg)
+		SaveState(&pet)
 
 		// Fix LastSaved time in file
-		data, _ := os.ReadFile(testConfigPath)
+		data, _ := os.ReadFile(TestConfigPath)
 		var savedPet Pet
 		json.Unmarshal(data, &savedPet)
 		savedPet.LastSaved = birthTime
 		data, _ = json.MarshalIndent(savedPet, "", "  ")
-		os.WriteFile(testConfigPath, data, 0644)
+		os.WriteFile(TestConfigPath, data, 0644)
 
-		loadedPet := loadState()
+		loadedPet := LoadState()
 
 		if loadedPet.LifeStage != 1 {
 			t.Errorf("Expected Child stage (1), got %d", loadedPet.LifeStage)
 		}
 		if loadedPet.Form != FormHealthyChild {
-			t.Errorf("Expected Healthy Child form, got %s", loadedPet.getFormName())
+			t.Errorf("Expected Healthy Child form, got %s", loadedPet.GetFormName())
 		}
 	})
 
@@ -2495,7 +2626,7 @@ func TestEvolution(t *testing.T) {
 			Health:           50,
 			LastSavedTime:    birthTime,
 		}
-		pet := newPet(testCfg)
+		pet := NewPet(testCfg)
 
 		// Manually add checkpoints to simulate poor care during baby stage
 		for i := 0; i < 48; i++ { // 48 hours of baby stage
@@ -2508,19 +2639,19 @@ func TestEvolution(t *testing.T) {
 			})
 		}
 
-		saveState(&pet)
+		SaveState(&pet)
 
-		data, _ := os.ReadFile(testConfigPath)
+		data, _ := os.ReadFile(TestConfigPath)
 		var savedPet Pet
 		json.Unmarshal(data, &savedPet)
 		savedPet.LastSaved = birthTime
 		data, _ = json.MarshalIndent(savedPet, "", "  ")
-		os.WriteFile(testConfigPath, data, 0644)
+		os.WriteFile(TestConfigPath, data, 0644)
 
-		loadedPet := loadState()
+		loadedPet := LoadState()
 
 		if loadedPet.Form != FormTroubledChild {
-			t.Errorf("Expected Troubled Child form, got %s", loadedPet.getFormName())
+			t.Errorf("Expected Troubled Child form, got %s", loadedPet.GetFormName())
 		}
 	})
 
@@ -2537,26 +2668,26 @@ func TestEvolution(t *testing.T) {
 			Health:           95,
 			LastSavedTime:    birthTime,
 		}
-		pet := newPet(testCfg)
+		pet := NewPet(testCfg)
 		// Manually set to Healthy Child as if it evolved from baby
 		pet.Form = FormHealthyChild
 		pet.LifeStage = 1 // Set to child stage
-		saveState(&pet)
+		SaveState(&pet)
 
-		data, _ := os.ReadFile(testConfigPath)
+		data, _ := os.ReadFile(TestConfigPath)
 		var savedPet Pet
 		json.Unmarshal(data, &savedPet)
 		savedPet.LastSaved = birthTime
 		data, _ = json.MarshalIndent(savedPet, "", "  ")
-		os.WriteFile(testConfigPath, data, 0644)
+		os.WriteFile(TestConfigPath, data, 0644)
 
-		loadedPet := loadState()
+		loadedPet := LoadState()
 
 		if loadedPet.LifeStage != 2 {
 			t.Errorf("Expected Adult stage (2), got %d", loadedPet.LifeStage)
 		}
 		if loadedPet.Form != FormEliteAdult {
-			t.Errorf("Expected Elite Adult form, got %s", loadedPet.getFormName())
+			t.Errorf("Expected Elite Adult form, got %s", loadedPet.GetFormName())
 		}
 	})
 
@@ -2573,7 +2704,7 @@ func TestEvolution(t *testing.T) {
 			Health:           15,
 			LastSavedTime:    birthTime,
 		}
-		pet := newPet(testCfg)
+		pet := NewPet(testCfg)
 
 		// Manually add checkpoints to simulate neglect during baby stage
 		for i := 0; i < 48; i++ {
@@ -2586,19 +2717,19 @@ func TestEvolution(t *testing.T) {
 			})
 		}
 
-		saveState(&pet)
+		SaveState(&pet)
 
-		data, _ := os.ReadFile(testConfigPath)
+		data, _ := os.ReadFile(TestConfigPath)
 		var savedPet Pet
 		json.Unmarshal(data, &savedPet)
 		savedPet.LastSaved = birthTime
 		data, _ = json.MarshalIndent(savedPet, "", "  ")
-		os.WriteFile(testConfigPath, data, 0644)
+		os.WriteFile(TestConfigPath, data, 0644)
 
-		loadedPet := loadState()
+		loadedPet := LoadState()
 
 		if loadedPet.Form != FormSicklyChild {
-			t.Errorf("Expected Sickly Child form, got %s", loadedPet.getFormName())
+			t.Errorf("Expected Sickly Child form, got %s", loadedPet.GetFormName())
 		}
 	})
 
@@ -2615,7 +2746,7 @@ func TestEvolution(t *testing.T) {
 			Health:           75,
 			LastSavedTime:    birthTime,
 		}
-		pet := newPet(testCfg)
+		pet := NewPet(testCfg)
 		pet.Form = FormHealthyChild
 		pet.LifeStage = 1
 
@@ -2630,19 +2761,19 @@ func TestEvolution(t *testing.T) {
 			})
 		}
 
-		saveState(&pet)
+		SaveState(&pet)
 
-		data, _ := os.ReadFile(testConfigPath)
+		data, _ := os.ReadFile(TestConfigPath)
 		var savedPet Pet
 		json.Unmarshal(data, &savedPet)
 		savedPet.LastSaved = birthTime
 		data, _ = json.MarshalIndent(savedPet, "", "  ")
-		os.WriteFile(testConfigPath, data, 0644)
+		os.WriteFile(TestConfigPath, data, 0644)
 
-		loadedPet := loadState()
+		loadedPet := LoadState()
 
 		if loadedPet.Form != FormStandardAdult {
-			t.Errorf("Expected Standard Adult form, got %s", loadedPet.getFormName())
+			t.Errorf("Expected Standard Adult form, got %s", loadedPet.GetFormName())
 		}
 	})
 
@@ -2659,7 +2790,7 @@ func TestEvolution(t *testing.T) {
 			Health:           45,
 			LastSavedTime:    birthTime,
 		}
-		pet := newPet(testCfg)
+		pet := NewPet(testCfg)
 		pet.Form = FormHealthyChild
 		pet.LifeStage = 1
 
@@ -2674,19 +2805,19 @@ func TestEvolution(t *testing.T) {
 			})
 		}
 
-		saveState(&pet)
+		SaveState(&pet)
 
-		data, _ := os.ReadFile(testConfigPath)
+		data, _ := os.ReadFile(TestConfigPath)
 		var savedPet Pet
 		json.Unmarshal(data, &savedPet)
 		savedPet.LastSaved = birthTime
 		data, _ = json.MarshalIndent(savedPet, "", "  ")
-		os.WriteFile(testConfigPath, data, 0644)
+		os.WriteFile(TestConfigPath, data, 0644)
 
-		loadedPet := loadState()
+		loadedPet := LoadState()
 
 		if loadedPet.Form != FormGrumpyAdult {
-			t.Errorf("Expected Grumpy Adult form, got %s", loadedPet.getFormName())
+			t.Errorf("Expected Grumpy Adult form, got %s", loadedPet.GetFormName())
 		}
 	})
 
@@ -2703,22 +2834,22 @@ func TestEvolution(t *testing.T) {
 			Health:           80,
 			LastSavedTime:    birthTime,
 		}
-		pet := newPet(testCfg)
+		pet := NewPet(testCfg)
 		pet.Form = FormTroubledChild
 		pet.LifeStage = 1
-		saveState(&pet)
+		SaveState(&pet)
 
-		data, _ := os.ReadFile(testConfigPath)
+		data, _ := os.ReadFile(TestConfigPath)
 		var savedPet Pet
 		json.Unmarshal(data, &savedPet)
 		savedPet.LastSaved = birthTime
 		data, _ = json.MarshalIndent(savedPet, "", "  ")
-		os.WriteFile(testConfigPath, data, 0644)
+		os.WriteFile(TestConfigPath, data, 0644)
 
-		loadedPet := loadState()
+		loadedPet := LoadState()
 
 		if loadedPet.Form != FormRedeemedAdult {
-			t.Errorf("Expected Redeemed Adult form, got %s", loadedPet.getFormName())
+			t.Errorf("Expected Redeemed Adult form, got %s", loadedPet.GetFormName())
 		}
 	})
 
@@ -2735,7 +2866,7 @@ func TestEvolution(t *testing.T) {
 			Health:           30,
 			LastSavedTime:    birthTime,
 		}
-		pet := newPet(testCfg)
+		pet := NewPet(testCfg)
 		pet.Form = FormTroubledChild
 		pet.LifeStage = 1
 
@@ -2750,19 +2881,19 @@ func TestEvolution(t *testing.T) {
 			})
 		}
 
-		saveState(&pet)
+		SaveState(&pet)
 
-		data, _ := os.ReadFile(testConfigPath)
+		data, _ := os.ReadFile(TestConfigPath)
 		var savedPet Pet
 		json.Unmarshal(data, &savedPet)
 		savedPet.LastSaved = birthTime
 		data, _ = json.MarshalIndent(savedPet, "", "  ")
-		os.WriteFile(testConfigPath, data, 0644)
+		os.WriteFile(TestConfigPath, data, 0644)
 
-		loadedPet := loadState()
+		loadedPet := LoadState()
 
 		if loadedPet.Form != FormDelinquentAdult {
-			t.Errorf("Expected Delinquent Adult form, got %s", loadedPet.getFormName())
+			t.Errorf("Expected Delinquent Adult form, got %s", loadedPet.GetFormName())
 		}
 	})
 
@@ -2779,22 +2910,22 @@ func TestEvolution(t *testing.T) {
 			Health:           60,
 			LastSavedTime:    birthTime,
 		}
-		pet := newPet(testCfg)
+		pet := NewPet(testCfg)
 		pet.Form = FormSicklyChild
 		pet.LifeStage = 1
-		saveState(&pet)
+		SaveState(&pet)
 
-		data, _ := os.ReadFile(testConfigPath)
+		data, _ := os.ReadFile(TestConfigPath)
 		var savedPet Pet
 		json.Unmarshal(data, &savedPet)
 		savedPet.LastSaved = birthTime
 		data, _ = json.MarshalIndent(savedPet, "", "  ")
-		os.WriteFile(testConfigPath, data, 0644)
+		os.WriteFile(TestConfigPath, data, 0644)
 
-		loadedPet := loadState()
+		loadedPet := LoadState()
 
 		if loadedPet.Form != FormWeakAdult {
-			t.Errorf("Expected Weak Adult form, got %s", loadedPet.getFormName())
+			t.Errorf("Expected Weak Adult form, got %s", loadedPet.GetFormName())
 		}
 	})
 }
@@ -2811,18 +2942,18 @@ func TestStatusLabelSleepingWithLowEnergy(t *testing.T) {
 			InitialEnergy:    25, // Low energy (< 30, so shows 😾)
 			Health:           80,
 			IsSleeping:       true,
-			LastSavedTime:    timeNow(),
+			LastSavedTime:    TimeNow(),
 		}
-		pet := newPet(testCfg)
+		pet := NewPet(testCfg)
 
 		// Status should be "😴😾" (sleeping + tired)
-		status := getStatus(pet)
+		status := GetStatus(pet)
 		if status != "😴😾" {
 			t.Errorf("Expected status '😴😾', got '%s'", status)
 		}
 
 		// Label should be "😴😾 Sleeping" (NOT "needs care")
-		label := getStatusWithLabel(pet)
+		label := GetStatusWithLabel(pet)
 		if label != "😴😾 Sleeping" {
 			t.Errorf("Expected label '😴😾 Sleeping', got '%s'", label)
 		}
@@ -2835,18 +2966,18 @@ func TestStatusLabelSleepingWithLowEnergy(t *testing.T) {
 			InitialEnergy:    80,
 			Health:           80,
 			IsSleeping:       true,
-			LastSavedTime:    timeNow(),
+			LastSavedTime:    TimeNow(),
 		}
-		pet := newPet(testCfg)
+		pet := NewPet(testCfg)
 
 		// Status should be "😴🙀" (sleeping + hungry)
-		status := getStatus(pet)
+		status := GetStatus(pet)
 		if status != "😴🙀" {
 			t.Errorf("Expected status '😴🙀', got '%s'", status)
 		}
 
 		// Label should show "(needs care)" because sleeping doesn't fix hunger
-		label := getStatusWithLabel(pet)
+		label := GetStatusWithLabel(pet)
 		if label != "😴🙀 Sleeping (needs care)" {
 			t.Errorf("Expected label '😴🙀 Sleeping (needs care)', got '%s'", label)
 		}
@@ -2859,18 +2990,18 @@ func TestStatusLabelSleepingWithLowEnergy(t *testing.T) {
 			InitialEnergy:    80,
 			Health:           80,
 			IsSleeping:       true,
-			LastSavedTime:    timeNow(),
+			LastSavedTime:    TimeNow(),
 		}
-		pet := newPet(testCfg)
+		pet := NewPet(testCfg)
 
 		// Status should be "😴😿" (sleeping + sad)
-		status := getStatus(pet)
+		status := GetStatus(pet)
 		if status != "😴😿" {
 			t.Errorf("Expected status '😴😿', got '%s'", status)
 		}
 
 		// Label should show "(needs care)" because sleeping doesn't fix happiness
-		label := getStatusWithLabel(pet)
+		label := GetStatusWithLabel(pet)
 		if label != "😴😿 Sleeping (needs care)" {
 			t.Errorf("Expected label '😴😿 Sleeping (needs care)', got '%s'", label)
 		}
@@ -2883,18 +3014,18 @@ func TestStatusLabelSleepingWithLowEnergy(t *testing.T) {
 			InitialEnergy:    80,
 			Health:           25, // Low health (< 30, so shows 🤢)
 			IsSleeping:       true,
-			LastSavedTime:    timeNow(),
+			LastSavedTime:    TimeNow(),
 		}
-		pet := newPet(testCfg)
+		pet := NewPet(testCfg)
 
 		// Status should be "😴🤢" (sleeping + sick)
-		status := getStatus(pet)
+		status := GetStatus(pet)
 		if status != "😴🤢" {
 			t.Errorf("Expected status '😴🤢', got '%s'", status)
 		}
 
 		// Label should show "(needs care)" because sleeping doesn't fix health
-		label := getStatusWithLabel(pet)
+		label := GetStatusWithLabel(pet)
 		if label != "😴🤢 Sleeping (needs care)" {
 			t.Errorf("Expected label '😴🤢 Sleeping (needs care)', got '%s'", label)
 		}
@@ -2907,18 +3038,18 @@ func TestStatusLabelSleepingWithLowEnergy(t *testing.T) {
 			InitialEnergy:    80,
 			Health:           80,
 			IsSleeping:       true,
-			LastSavedTime:    timeNow(),
+			LastSavedTime:    TimeNow(),
 		}
-		pet := newPet(testCfg)
+		pet := NewPet(testCfg)
 
 		// Status should be just "😴" (sleeping, all good)
-		status := getStatus(pet)
+		status := GetStatus(pet)
 		if status != "😴" {
 			t.Errorf("Expected status '😴', got '%s'", status)
 		}
 
 		// Label should be "😴 Sleeping" (no "needs care")
-		label := getStatusWithLabel(pet)
+		label := GetStatusWithLabel(pet)
 		if label != "😴 Sleeping" {
 			t.Errorf("Expected label '😴 Sleeping', got '%s'", label)
 		}
