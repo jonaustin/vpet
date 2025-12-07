@@ -69,11 +69,14 @@ const (
 
 	// Status emojis
 	StatusEmojiHappy       = "😸" // Default happy status
+	StatusEmojiNeutral     = "🙂" // Neutral/normal state
 	StatusEmojiSleeping    = "😴" // Sleeping/tired
 	StatusEmojiHungry      = "🙀" // Hungry/desperate
 	StatusEmojiSad         = "😿" // Sad/unhappy
 	StatusEmojiEnergetic   = "😼" // Energetic/fast
 	StatusEmojiExcited     = "😻" // Excited/about to catch
+	StatusEmojiSick        = "🤢" // Sick/ill
+	StatusEmojiTired       = "😾" // Tired/grumpy
 )
 
 // Chronotype constants

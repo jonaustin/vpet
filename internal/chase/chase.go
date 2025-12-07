@@ -40,11 +40,11 @@ func getChaseEmoji(p pet.Pet, distX, distY int) string {
 	if p.Happiness < pet.LowStatThreshold {
 		return pet.StatusEmojiSad // Sad/slow
 	} else if p.Happiness > pet.HighStatThreshold {
-		return pet.StatusEmojiHappy // Default happy
+		return pet.StatusEmojiHappy // Very happy
 	}
 
-	// Default emoji
-	return pet.StatusEmojiHappy
+	// Default emoji (neutral)
+	return pet.StatusEmojiNeutral
 }
 
 // Target defines what the pet can chase

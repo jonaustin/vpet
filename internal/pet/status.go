@@ -22,9 +22,9 @@ func GetStatus(p Pet) string {
 	// If no event, show sleep or awake state
 	if activity == "" {
 		if p.Sleeping {
-			activity = "😴"
+			activity = StatusEmojiSleeping
 		} else {
-			activity = "😸"
+			activity = StatusEmojiHappy
 		}
 	}
 
@@ -32,19 +32,19 @@ func GetStatus(p Pet) string {
 	var feeling string
 
 	lowestStat := p.Health
-	lowestFeeling := "🤢" // Sick
+	lowestFeeling := StatusEmojiSick // Sick
 
 	if p.Energy < lowestStat {
 		lowestStat = p.Energy
-		lowestFeeling = "😾" // Tired
+		lowestFeeling = StatusEmojiTired // Tired
 	}
 	if p.Hunger < lowestStat {
 		lowestStat = p.Hunger
-		lowestFeeling = "🙀" // Hungry
+		lowestFeeling = StatusEmojiHungry // Hungry
 	}
 	if p.Happiness < lowestStat {
 		lowestStat = p.Happiness
-		lowestFeeling = "😿" // Sad
+		lowestFeeling = StatusEmojiSad // Sad
 	}
 
 	// Show critical feeling if any stat < 30
