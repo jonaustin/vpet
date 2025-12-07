@@ -17,6 +17,36 @@ const (
 	minVisibleRows = 6
 )
 
+// getChaseEmoji returns the appropriate emoji for the pet during chase based on its state
+func getChaseEmoji(p pet.Pet, distX, distY int) string {
+	// Check if pet is about to catch (very close)
+	if absInt(distX) <= 2 && absInt(distY) <= 1 {
+		return "😻" // Excited about to catch
+	}
+
+	// Check energy level - affects speed emoji
+	if p.Energy < 30 {
+		return "😴" // Tired/slow
+	} else if p.Energy > 80 {
+		return "😼" // Energetic/fast
+	}
+
+	// Check happiness level
+	if p.Happiness < 30 {
+		return "😿" // Sad/slow
+	} else if p.Happiness > 80 {
+		return "😸" // Default happy
+	}
+
+	// Check hunger level
+	if p.Hunger < 30 {
+		return "🙀" // Hungry/desperate
+	}
+
+	// Default emoji
+	return "😸"
+}
+
 // Target defines what the pet can chase
 type Target struct {
 	Emoji string
@@ -166,7 +196,11 @@ func (m Model) View() string {
 	}
 
 	rows := m.visibleRows()
-	petEmoji := "😸"
+
+	// Calculate distance to determine emoji
+	distX := m.TargetPosX - m.PetPosX
+	distY := m.TargetPosY - m.PetPosY
+	petEmoji := getChaseEmoji(m.Pet, distX, distY)
 
 	// Build 2D grid for animation
 	grid := make([][]rune, rows-1)

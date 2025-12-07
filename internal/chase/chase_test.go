@@ -514,3 +514,72 @@ func TestModel_PetHorizontalMovementThreshold(t *testing.T) {
 		})
 	}
 }
+
+func TestGetChaseEmoji(t *testing.T) {
+	tests := []struct {
+		name     string
+		pet      pet.Pet
+		distX    int
+		distY    int
+		expected string
+	}{
+		{
+			name:     "About to catch - close distance",
+			pet:      pet.Pet{Energy: 50, Happiness: 50, Hunger: 50},
+			distX:    1,
+			distY:    0,
+			expected: "😻",
+		},
+		{
+			name:     "Tired pet - low energy",
+			pet:      pet.Pet{Energy: 20, Happiness: 50, Hunger: 50},
+			distX:    10,
+			distY:    5,
+			expected: "😴",
+		},
+		{
+			name:     "Energetic pet - high energy",
+			pet:      pet.Pet{Energy: 90, Happiness: 50, Hunger: 50},
+			distX:    10,
+			distY:    5,
+			expected: "😼",
+		},
+		{
+			name:     "Sad pet - low happiness",
+			pet:      pet.Pet{Energy: 50, Happiness: 20, Hunger: 50},
+			distX:    10,
+			distY:    5,
+			expected: "😿",
+		},
+		{
+			name:     "Happy pet - high happiness",
+			pet:      pet.Pet{Energy: 50, Happiness: 90, Hunger: 50},
+			distX:    10,
+			distY:    5,
+			expected: "😸",
+		},
+		{
+			name:     "Hungry pet - low hunger",
+			pet:      pet.Pet{Energy: 50, Happiness: 50, Hunger: 20},
+			distX:    10,
+			distY:    5,
+			expected: "🙀",
+		},
+		{
+			name:     "Default happy pet",
+			pet:      pet.Pet{Energy: 50, Happiness: 50, Hunger: 50},
+			distX:    10,
+			distY:    5,
+			expected: "😸",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := getChaseEmoji(tt.pet, tt.distX, tt.distY)
+			if result != tt.expected {
+				t.Errorf("getChaseEmoji() = %v, want %v", result, tt.expected)
+			}
+		})
+	}
+}
