@@ -43,8 +43,8 @@ func getChaseEmoji(p pet.Pet, distX, distY int) string {
 		return pet.StatusEmojiHappy // Very happy
 	}
 
-	// Default emoji (happy)
-	return pet.StatusEmojiHappy
+	// Default emoji (neutral)
+	return pet.StatusEmojiNeutral
 }
 
 // Target defines what the pet can chase
