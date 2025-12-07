@@ -25,19 +25,19 @@ func getChaseEmoji(p pet.Pet, distX, distY int) string {
 	}
 
 	// Check energy level - affects speed emoji
-	if p.Energy < 30 {
+	if p.Energy < pet.LowStatThreshold {
 		return "😴" // Tired/slow
-	} else if p.Energy > 80 {
+	} else if p.Energy > pet.AutoWakeEnergy {
 		return "😼" // Energetic/fast
 	}
 
 	// Check hunger level
-	if p.Hunger < 30 {
+	if p.Hunger < pet.LowStatThreshold {
 		return "🙀" // Hungry/desperate
 	}
 
 	// Check happiness level
-	if p.Happiness < 30 {
+	if p.Happiness < pet.LowStatThreshold {
 		return "😿" // Sad/slow
 	} else if p.Happiness > 80 {
 		return "😸" // Default happy
