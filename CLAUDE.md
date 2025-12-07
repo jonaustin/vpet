@@ -75,15 +75,18 @@ go test -v -cover ./...
    bd update vpet-xxx --status=in_progress
    ```
 
-3. **Complete work with PR** - ALWAYS use pull requests
+3. **Create PR** - ALWAYS use pull requests
    ```bash
    # After committing changes
    git push -u origin feature/vpet-xxx-add-feature-x
 
-   # Create PR (links to bd issue in description)
-   gh pr create --title "Add feature X" --body "Closes vpet-xxx"
+   # Create PR (reference issue, but don't close yet)
+   gh pr create --title "Add feature X" --body "Addresses vpet-xxx"
+   ```
 
-   # After PR merged, close issue
+4. **Close issue AFTER merge** - Only close when PR is merged to main
+   ```bash
+   # After PR is merged to main
    bd close vpet-xxx
    ```
 
@@ -92,6 +95,7 @@ go test -v -cover ./...
 - ❌ Commit directly to main branch
 - ❌ Skip pull requests
 - ❌ Reuse branches across multiple issues
+- ❌ Close a bd issue before its PR is merged to main
 
 ### Pre-Implementation Steps
 
