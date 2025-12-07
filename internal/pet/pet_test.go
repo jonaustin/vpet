@@ -2917,6 +2917,256 @@ func TestEvolution(t *testing.T) {
 	})
 }
 
+func TestTraitSystem(t *testing.T) {
+	cleanup := setupTestFile(t)
+	defer cleanup()
+
+	// Save original RandFloat64 and restore after test
+	originalRandFloat64 := RandFloat64
+	defer func() { RandFloat64 = originalRandFloat64 }()
+
+	t.Run("GenerateTraits creates all categories", func(t *testing.T) {
+		// Use deterministic random for reproducible test
+		RandFloat64 = func() float64 { return 0.1 }
+
+		traits := GenerateTraits()
+
+		// Should have 4 categories: temperament, appetite, sociability, constitution
+		if len(traits) != 4 {
+			t.Fatalf("Expected 4 traits, got %d", len(traits))
+		}
+
+		// Check all categories are present
+		categories := make(map[string]bool)
+		for _, trait := range traits {
+			categories[trait.Category] = true
+		}
+
+		expectedCategories := []string{"temperament", "appetite", "sociability", "constitution"}
+		for _, cat := range expectedCategories {
+			if !categories[cat] {
+				t.Errorf("Missing category: %s", cat)
+			}
+		}
+	})
+
+	t.Run("GenerateTraits selects first option with low roll", func(t *testing.T) {
+		RandFloat64 = func() float64 { return 0.0 } // Always select first option
+
+		traits := GenerateTraits()
+
+		// First options: Calm, Picky, Independent, Robust
+		expectedTraits := map[string]string{
+			"temperament":  "Calm",
+			"appetite":     "Picky",
+			"sociability":  "Independent",
+			"constitution": "Robust",
+		}
+
+		for _, trait := range traits {
+			expected := expectedTraits[trait.Category]
+			if trait.Name != expected {
+				t.Errorf("Category %s: expected %s, got %s", trait.Category, expected, trait.Name)
+			}
+		}
+	})
+
+	t.Run("GenerateTraits selects second option with high roll", func(t *testing.T) {
+		RandFloat64 = func() float64 { return 0.9 } // Always select last option
+
+		traits := GenerateTraits()
+
+		// Second options: Hyperactive, Hungry, Needy, Fragile
+		expectedTraits := map[string]string{
+			"temperament":  "Hyperactive",
+			"appetite":     "Hungry",
+			"sociability":  "Needy",
+			"constitution": "Fragile",
+		}
+
+		for _, trait := range traits {
+			expected := expectedTraits[trait.Category]
+			if trait.Name != expected {
+				t.Errorf("Category %s: expected %s, got %s", trait.Category, expected, trait.Name)
+			}
+		}
+	})
+
+	t.Run("GetTraitModifier returns 1.0 for non-existent modifier", func(t *testing.T) {
+		pet := NewPet(nil)
+		pet.Traits = []Trait{} // No traits
+
+		modifier := pet.GetTraitModifier("non_existent_key")
+		if modifier != 1.0 {
+			t.Errorf("Expected 1.0 for missing modifier, got %f", modifier)
+		}
+	})
+
+	t.Run("GetTraitModifier applies single trait modifier", func(t *testing.T) {
+		pet := NewPet(nil)
+		pet.Traits = []Trait{
+			{
+				Name:     "Calm",
+				Category: "temperament",
+				Modifiers: map[string]float64{
+					"energy_decay": 0.8,
+				},
+			},
+		}
+
+		modifier := pet.GetTraitModifier("energy_decay")
+		if modifier != 0.8 {
+			t.Errorf("Expected 0.8 for energy_decay, got %f", modifier)
+		}
+	})
+
+	t.Run("GetTraitModifier multiplies multiple trait modifiers", func(t *testing.T) {
+		pet := NewPet(nil)
+		pet.Traits = []Trait{
+			{
+				Name:     "Calm",
+				Category: "temperament",
+				Modifiers: map[string]float64{
+					"energy_decay": 0.8,
+				},
+			},
+			{
+				Name:     "Picky",
+				Category: "appetite",
+				Modifiers: map[string]float64{
+					"feed_bonus": 0.75,
+				},
+			},
+		}
+
+		// Energy decay should be 0.8 (only from Calm)
+		energyMod := pet.GetTraitModifier("energy_decay")
+		if energyMod != 0.8 {
+			t.Errorf("Expected 0.8 for energy_decay, got %f", energyMod)
+		}
+
+		// Feed bonus should be 0.75 (only from Picky)
+		feedMod := pet.GetTraitModifier("feed_bonus")
+		if feedMod != 0.75 {
+			t.Errorf("Expected 0.75 for feed_bonus, got %f", feedMod)
+		}
+	})
+
+	t.Run("GetTraitModifier stacks modifiers from multiple traits", func(t *testing.T) {
+		pet := NewPet(nil)
+		// Create a hypothetical scenario where two traits affect the same modifier
+		pet.Traits = []Trait{
+			{
+				Name:     "Trait1",
+				Category: "test",
+				Modifiers: map[string]float64{
+					"test_modifier": 0.8,
+				},
+			},
+			{
+				Name:     "Trait2",
+				Category: "test",
+				Modifiers: map[string]float64{
+					"test_modifier": 1.5,
+				},
+			},
+		}
+
+		// Should multiply: 0.8 * 1.5 = 1.2
+		modifier := pet.GetTraitModifier("test_modifier")
+		expected := 0.8 * 1.5
+		// Use approximate comparison for floating point
+		epsilon := 0.0001
+		if modifier < expected-epsilon || modifier > expected+epsilon {
+			t.Errorf("Expected ~%f for stacked modifiers, got %f", expected, modifier)
+		}
+	})
+
+	t.Run("Calm trait reduces energy and happiness decay", func(t *testing.T) {
+		pet := NewPet(nil)
+		pet.Traits = []Trait{
+			{
+				Name:     "Calm",
+				Category: "temperament",
+				Modifiers: map[string]float64{
+					"energy_decay":    0.8,
+					"happiness_decay": 0.85,
+				},
+			},
+		}
+
+		if pet.GetTraitModifier("energy_decay") != 0.8 {
+			t.Error("Calm should reduce energy decay to 0.8")
+		}
+		if pet.GetTraitModifier("happiness_decay") != 0.85 {
+			t.Error("Calm should reduce happiness decay to 0.85")
+		}
+	})
+
+	t.Run("Hyperactive trait increases energy decay and play bonus", func(t *testing.T) {
+		pet := NewPet(nil)
+		pet.Traits = []Trait{
+			{
+				Name:     "Hyperactive",
+				Category: "temperament",
+				Modifiers: map[string]float64{
+					"energy_decay": 1.3,
+					"play_bonus":   1.25,
+				},
+			},
+		}
+
+		if pet.GetTraitModifier("energy_decay") != 1.3 {
+			t.Error("Hyperactive should increase energy decay to 1.3")
+		}
+		if pet.GetTraitModifier("play_bonus") != 1.25 {
+			t.Error("Hyperactive should increase play bonus to 1.25")
+		}
+	})
+
+	t.Run("Robust trait reduces illness chance and health decay", func(t *testing.T) {
+		pet := NewPet(nil)
+		pet.Traits = []Trait{
+			{
+				Name:     "Robust",
+				Category: "constitution",
+				Modifiers: map[string]float64{
+					"illness_chance": 0.5,
+					"health_decay":   0.85,
+				},
+			},
+		}
+
+		if pet.GetTraitModifier("illness_chance") != 0.5 {
+			t.Error("Robust should reduce illness chance to 0.5")
+		}
+		if pet.GetTraitModifier("health_decay") != 0.85 {
+			t.Error("Robust should reduce health decay to 0.85")
+		}
+	})
+
+	t.Run("Fragile trait increases illness chance and health decay", func(t *testing.T) {
+		pet := NewPet(nil)
+		pet.Traits = []Trait{
+			{
+				Name:     "Fragile",
+				Category: "constitution",
+				Modifiers: map[string]float64{
+					"illness_chance": 1.8,
+					"health_decay":   1.2,
+				},
+			},
+		}
+
+		if pet.GetTraitModifier("illness_chance") != 1.8 {
+			t.Error("Fragile should increase illness chance to 1.8")
+		}
+		if pet.GetTraitModifier("health_decay") != 1.2 {
+			t.Error("Fragile should increase health decay to 1.2")
+		}
+	})
+}
+
 func TestStatusLabelSleepingWithLowEnergy(t *testing.T) {
 	cleanup := setupTestFile(t)
 	defer cleanup()
