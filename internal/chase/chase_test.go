@@ -581,8 +581,8 @@ func TestGetChaseEmoji(t *testing.T) {
 			expected: pet.StatusEmojiHungry,
 		},
 		{
-			name:     "Hungry takes priority over happy",
-			pet:      pet.Pet{Energy: 50, Happiness: 90, Hunger: 20},
+			name:     "Hungry takes priority over energetic",
+			pet:      pet.Pet{Energy: 90, Happiness: 90, Hunger: 20},
 			distX:    10,
 			distY:    5,
 			expected: pet.StatusEmojiHungry,

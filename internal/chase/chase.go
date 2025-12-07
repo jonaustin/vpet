@@ -24,16 +24,16 @@ func getChaseEmoji(p pet.Pet, distX, distY int) string {
 		return pet.StatusEmojiExcited // Excited about to catch
 	}
 
+	// Check hunger level first - critical state takes priority
+	if p.Hunger < pet.LowStatThreshold {
+		return pet.StatusEmojiHungry // Hungry/desperate
+	}
+
 	// Check energy level - affects speed emoji
 	if p.Energy < pet.LowStatThreshold {
 		return pet.StatusEmojiSleeping // Tired/slow
 	} else if p.Energy > pet.AutoWakeEnergy {
 		return pet.StatusEmojiEnergetic // Energetic/fast
-	}
-
-	// Check hunger level
-	if p.Hunger < pet.LowStatThreshold {
-		return pet.StatusEmojiHungry // Hungry/desperate
 	}
 
 	// Check happiness level
