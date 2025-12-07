@@ -497,20 +497,7 @@ func TestNewPet(t *testing.T) {
 		t.Errorf("Expected pet name to be %s, got %s", DefaultPetName, pet.Name)
 	}
 
-	// Check new fields
-	if pet.Health != MaxStat {
-		t.Errorf("Expected initial health to be %d, got %d", MaxStat, pet.Health)
-	}
-	if pet.Age != 0 {
-		t.Errorf("Expected initial age to be 0, got %d", pet.Age)
-	}
-	if pet.LifeStage != 0 {
-		t.Errorf("Expected initial life stage to be 0, got %d", pet.LifeStage)
-	}
-	if pet.Illness {
-		t.Error("New pet should not be ill")
-	}
-
+	// Check initial stats
 	if pet.Health != MaxStat {
 		t.Errorf("Expected initial health to be %d, got %d", MaxStat, pet.Health)
 	}
