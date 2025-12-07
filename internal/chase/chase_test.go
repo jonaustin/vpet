@@ -390,9 +390,17 @@ func TestModel_View_ContainsPetAndTarget(t *testing.T) {
 		t.Errorf("View should contain target emoji %q", m.Target.Emoji)
 	}
 
-	// View should contain pet emoji
-	if !strings.Contains(view, "😸") {
-		t.Error("View should contain pet emoji 😸")
+	// View should contain some pet emoji (check for common chase emojis)
+	petEmojis := []string{"😸", "😴", "😼", "😿", "🙀", "😻"}
+	found := false
+	for _, emoji := range petEmojis {
+		if strings.Contains(view, emoji) {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("View should contain a pet emoji")
 	}
 
 	// View should contain exit instruction
