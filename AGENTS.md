@@ -9,3 +9,5 @@
 Repo prefix will auto-detect from bd metadata (current DB lives in `.beads/`).
 
 If bd reports staleness or daemon issues, add `--no-daemon --sandbox` to the command and rerun.
+
+**Branch workflow**: Do not create or use git worktrees in this repo. Beads/`bd`, Claude Code, and Codex must work only in the current checkout with feature branches (no `git worktree` or `bd migrate-sync` flows).

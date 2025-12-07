@@ -13,6 +13,7 @@ vpet is a Tamagotchi-style virtual pet that lives in your terminal with tmux int
 3. **ALL work needs a bd issue** - `bd create --title="..." --type=task|bug|feature`
 4. **ALWAYS use pull requests** - No direct pushes, no skipping review
 5. **ALWAYS add tests** - No untested code
+6. **NO git worktrees** - Stay in this checkout and use feature branches only; avoid `git worktree` and `bd migrate-sync`.
 
 ## Development Commands
 
@@ -88,6 +89,7 @@ go test -v -cover ./...
    ```bash
    # After PR is merged to main
    bd close vpet-xxx
+   bd sync                    # commits closure to main branch, pushes
    ```
 
 **Never:**
