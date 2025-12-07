@@ -547,6 +547,13 @@ func TestGetChaseEmoji(t *testing.T) {
 			expected: pet.StatusEmojiExcited,
 		},
 		{
+			name:     "Close but not touching still excites",
+			pet:      pet.Pet{Energy: 50, Happiness: 50, Hunger: 50},
+			distX:    3,
+			distY:    1,
+			expected: pet.StatusEmojiExcited,
+		},
+		{
 			name:     "Tired pet - low energy",
 			pet:      pet.Pet{Energy: 20, Happiness: 50, Hunger: 50},
 			distX:    10,

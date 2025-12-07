@@ -19,8 +19,8 @@ const (
 
 // getChaseEmoji returns the appropriate emoji for the pet during chase based on its state
 func getChaseEmoji(p pet.Pet, distX, distY int) string {
-	// Check if pet is about to catch (very close)
-	if absInt(distX) <= 2 && absInt(distY) <= 1 {
+	// Near-catch window: show excitement when the pet closes most of the gap
+	if absInt(distX) <= 3 && absInt(distY) <= 1 {
 		return pet.StatusEmojiExcited // Excited about to catch
 	}
 
