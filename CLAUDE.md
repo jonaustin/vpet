@@ -1,10 +1,18 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance for AI assistants working with code in this repository.
 
 ## Project Overview
 
 vpet is a Tamagotchi-style virtual pet that lives in your terminal with tmux integration. It uses the Bubble Tea TUI framework. The pet has lifecycle mechanics with aging, stats that decay over time, random illnesses, and multiple death conditions.
+
+## Critical Rules (TL;DR)
+
+1. **NEVER commit to main** - Always use feature branches (`feature/<issue-id>-description`)
+2. **NEVER hardcode numbers** - Search `internal/pet/constants.go` first
+3. **ALL work needs a bd issue** - `bd create --title="..." --type=task|bug|feature`
+4. **ALWAYS use pull requests** - No direct pushes, no skipping review
+5. **ALWAYS add tests** - No untested code
 
 ## Development Commands
 
@@ -50,6 +58,8 @@ go test -v -cover ./...
 
 ### Workflow Requirements
 
+> **Note:** `bd` (beads) is a local issue tracker stored in `.beads/`. Run `bd --help` for commands.
+
 1. **Create a bd issue** - ALL work must be tracked
    ```bash
    bd create --title="Add feature X" --type=feature
@@ -92,6 +102,7 @@ go test -v -cover ./...
    # Find thresholds, rates, and effects
    grep -i "threshold\|rate\|effect\|increase\|decrease" internal/pet/constants.go
    ```
+   > Or read the file directly - it's small (~100 lines)
 
 2. **Study similar implementations** - Find comparable features
    ```bash
@@ -134,6 +145,24 @@ Before pushing to your feature branch:
 - [ ] Error handling follows established patterns
 - [ ] Branch contains only changes for this bd issue
 
+### When Uncertain
+
+If unsure about any of the following, **ASK before proceeding:**
+
+- Which constant to use (or whether to create a new one)
+- Whether to create a new file vs. modify existing
+- How to name something (functions, variables, files)
+- Whether a change warrants a new bd issue
+- Architectural decisions that affect multiple packages
+
+### If Build/Tests Fail
+
+1. **Read the error carefully** - Understand what failed and why
+2. **Check your changes** - Run `git diff` to see what you modified
+3. **Fix before committing** - Never commit broken code
+4. **Run tests locally** - `go test ./...` before pushing
+5. **If stuck** - Describe the error clearly and ask for guidance
+
 ## Architecture
 
 ### Package Structure
@@ -141,7 +170,7 @@ Before pushing to your feature branch:
 ```
 vpet/
 ├── main.go                      # Entry point, flags, wiring
-├── internal/
+├── internal/                    # Private packages (Go convention: not importable externally)
 │   ├── pet/
 │   │   ├── pet.go               # Pet struct, stats, lifecycle, evolution
 │   │   ├── constants.go         # Decay rates, thresholds, form definitions
