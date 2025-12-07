@@ -12,6 +12,11 @@ import (
 	"vpet/internal/pet"
 )
 
+const (
+	tickInterval   = 70 * time.Millisecond
+	minVisibleRows = 6
+)
+
 // Target defines what the pet can chase
 type Target struct {
 	Emoji string
@@ -66,7 +71,7 @@ func Run() {
 }
 
 func tick() tea.Cmd {
-	return tea.Tick(70*time.Millisecond, func(t time.Time) tea.Msg {
+	return tea.Tick(tickInterval, func(t time.Time) tea.Msg {
 		return animTickMsg(t)
 	})
 }
@@ -164,8 +169,8 @@ func (m Model) View() string {
 	petEmoji := "😸"
 
 	// Build 2D grid for animation
-	grid := make([][]rune, rows)
-	for y := 0; y < rows; y++ {
+	grid := make([][]rune, rows-1)
+	for y := 0; y < rows-1; y++ {
 		grid[y] = make([]rune, m.TermWidth)
 		for x := 0; x < m.TermWidth; x++ {
 			grid[y][x] = ' '
@@ -210,6 +215,19 @@ func (m *Model) clampPositions() {
 		return
 	}
 
+	if m.PetPosX < 0 {
+		m.PetPosX = 0
+	}
+	if m.PetPosX >= m.maxX() {
+		m.PetPosX = m.maxX()
+	}
+	if m.TargetPosX < 0 {
+		m.TargetPosX = 0
+	}
+	if m.TargetPosX >= m.maxX() {
+		m.TargetPosX = m.maxX()
+	}
+
 	if m.PetPosY < 0 {
 		m.PetPosY = 0
 	}
@@ -230,8 +248,8 @@ func (m Model) visibleRows() int {
 		return 0
 	}
 	rows := m.TermHeight - 2 // leave space for instruction
-	if rows < 6 {
-		rows = 6
+	if rows < minVisibleRows {
+		rows = minVisibleRows
 	}
 	return rows
 }

@@ -308,8 +308,8 @@ func TestModel_Update_AnimTick_BoundaryConstraints(t *testing.T) {
 			PetPosY:    12,
 		}
 
-		minY := 2
-		maxY := 19 // termHeight - 5
+		minY := 0
+		maxY := m.visibleRows() - 1
 
 		// Run many frames to traverse the full sine wave
 		for i := 0; i < 50; i++ {
@@ -339,8 +339,8 @@ func TestModel_Update_AnimTick_BoundaryConstraints(t *testing.T) {
 			PetPosY:    12,
 		}
 
-		minY := 2
-		maxY := 19 // termHeight - 5
+		minY := 0
+		maxY := m.visibleRows() - 1
 
 		// Run frames until pet moves and gets clamped
 		for i := 0; i < 20; i++ {
