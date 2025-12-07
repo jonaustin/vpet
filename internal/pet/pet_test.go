@@ -3167,6 +3167,170 @@ func TestTraitSystem(t *testing.T) {
 	})
 }
 
+func TestChronotypeHelpers(t *testing.T) {
+	cleanup := setupTestFile(t)
+	defer cleanup()
+
+	t.Run("GetChronotypeSchedule returns correct hours", func(t *testing.T) {
+		tests := []struct {
+			chronotype string
+			wantWake   int
+			wantSleep  int
+		}{
+			{ChronotypeEarlyBird, 5, 21},  // 5am - 9pm
+			{ChronotypeNormal, 7, 23},     // 7am - 11pm
+			{ChronotypeNightOwl, 10, 2},   // 10am - 2am
+			{"unknown", 7, 23},            // defaults to Normal
+		}
+
+		for _, tt := range tests {
+			wakeHour, sleepHour := GetChronotypeSchedule(tt.chronotype)
+			if wakeHour != tt.wantWake || sleepHour != tt.wantSleep {
+				t.Errorf("GetChronotypeSchedule(%q) = (%d, %d), want (%d, %d)",
+					tt.chronotype, wakeHour, sleepHour, tt.wantWake, tt.wantSleep)
+			}
+		}
+	})
+
+	t.Run("IsActiveHours checks time windows correctly", func(t *testing.T) {
+		tests := []struct {
+			chronotype string
+			hour       int
+			wantActive bool
+		}{
+			// Early Bird (5am-9pm)
+			{ChronotypeEarlyBird, 4, false},  // before wake
+			{ChronotypeEarlyBird, 5, true},   // exactly wake time
+			{ChronotypeEarlyBird, 12, true},  // mid-day
+			{ChronotypeEarlyBird, 20, true},  // before sleep
+			{ChronotypeEarlyBird, 21, false}, // exactly sleep time
+			{ChronotypeEarlyBird, 22, false}, // after sleep
+
+			// Normal (7am-11pm)
+			{ChronotypeNormal, 6, false},  // before wake
+			{ChronotypeNormal, 7, true},   // exactly wake time
+			{ChronotypeNormal, 15, true},  // mid-day
+			{ChronotypeNormal, 22, true},  // before sleep
+			{ChronotypeNormal, 23, false}, // exactly sleep time
+			{ChronotypeNormal, 0, false},  // after sleep
+
+			// Night Owl (10am-2am) - wraps around midnight
+			{ChronotypeNightOwl, 9, false},  // before wake
+			{ChronotypeNightOwl, 10, true},  // exactly wake time
+			{ChronotypeNightOwl, 18, true},  // evening
+			{ChronotypeNightOwl, 23, true},  // late night
+			{ChronotypeNightOwl, 0, true},   // after midnight (active)
+			{ChronotypeNightOwl, 1, true},   // still active
+			{ChronotypeNightOwl, 2, false},  // exactly sleep time
+			{ChronotypeNightOwl, 3, false},  // after sleep
+		}
+
+		for _, tt := range tests {
+			pet := NewPet(nil)
+			pet.Chronotype = tt.chronotype
+			active := IsActiveHours(&pet, tt.hour)
+			if active != tt.wantActive {
+				t.Errorf("IsActiveHours(%s, %d) = %v, want %v",
+					tt.chronotype, tt.hour, active, tt.wantActive)
+			}
+		}
+	})
+
+	t.Run("GetChronotypeName returns display names", func(t *testing.T) {
+		tests := []struct {
+			chronotype string
+			wantName   string
+		}{
+			{ChronotypeEarlyBird, "Early Bird"},
+			{ChronotypeNormal, "Normal"},
+			{ChronotypeNightOwl, "Night Owl"},
+			{"unknown", "Normal"}, // defaults to Normal
+		}
+
+		for _, tt := range tests {
+			name := GetChronotypeName(tt.chronotype)
+			if name != tt.wantName {
+				t.Errorf("GetChronotypeName(%q) = %q, want %q",
+					tt.chronotype, name, tt.wantName)
+			}
+		}
+	})
+
+	t.Run("GetChronotypeEmoji returns correct emojis", func(t *testing.T) {
+		tests := []struct {
+			chronotype string
+			wantEmoji  string
+		}{
+			{ChronotypeEarlyBird, "🌅"},
+			{ChronotypeNormal, "☀️"},
+			{ChronotypeNightOwl, "🦉"},
+			{"unknown", "☀️"}, // defaults to Normal
+		}
+
+		for _, tt := range tests {
+			emoji := GetChronotypeEmoji(tt.chronotype)
+			if emoji != tt.wantEmoji {
+				t.Errorf("GetChronotypeEmoji(%q) = %q, want %q",
+					tt.chronotype, emoji, tt.wantEmoji)
+			}
+		}
+	})
+
+	t.Run("AssignRandomChronotype picks deterministically", func(t *testing.T) {
+		originalRandFloat64 := RandFloat64
+		defer func() { RandFloat64 = originalRandFloat64 }()
+
+		tests := []struct {
+			randValue      float64
+			wantChronotype string
+		}{
+			{0.0, ChronotypeEarlyBird},   // [0, 0.33)
+			{0.1, ChronotypeEarlyBird},   // [0, 0.33)
+			{0.32, ChronotypeEarlyBird},  // [0, 0.33)
+			{0.33, ChronotypeNormal},     // [0.33, 0.66)
+			{0.5, ChronotypeNormal},      // [0.33, 0.66)
+			{0.65, ChronotypeNormal},     // [0.33, 0.66)
+			{0.66, ChronotypeNightOwl},   // [0.66, 1.0)
+			{0.9, ChronotypeNightOwl},    // [0.66, 1.0)
+			{0.99, ChronotypeNightOwl},   // [0.66, 1.0)
+		}
+
+		for _, tt := range tests {
+			RandFloat64 = func() float64 { return tt.randValue }
+			chronotype := AssignRandomChronotype()
+			if chronotype != tt.wantChronotype {
+				t.Errorf("AssignRandomChronotype() with rand=%f = %q, want %q",
+					tt.randValue, chronotype, tt.wantChronotype)
+			}
+		}
+	})
+
+	t.Run("AssignRandomChronotype distributes evenly", func(t *testing.T) {
+		originalRandFloat64 := RandFloat64
+		defer func() { RandFloat64 = originalRandFloat64 }()
+
+		// Test that all three chronotypes can be selected
+		counts := make(map[string]int)
+
+		values := []float64{0.1, 0.5, 0.9} // one from each range
+		for _, val := range values {
+			RandFloat64 = func() float64 { return val }
+			chronotype := AssignRandomChronotype()
+			counts[chronotype]++
+		}
+
+		if counts[ChronotypeEarlyBird] != 1 {
+			t.Errorf("Expected 1 Early Bird, got %d", counts[ChronotypeEarlyBird])
+		}
+		if counts[ChronotypeNormal] != 1 {
+			t.Errorf("Expected 1 Normal, got %d", counts[ChronotypeNormal])
+		}
+		if counts[ChronotypeNightOwl] != 1 {
+			t.Errorf("Expected 1 Night Owl, got %d", counts[ChronotypeNightOwl])
+		}
+	})
+}
+
 func TestStatusLabelSleepingWithLowEnergy(t *testing.T) {
 	cleanup := setupTestFile(t)
 	defer cleanup()
