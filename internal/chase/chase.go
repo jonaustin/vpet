@@ -31,16 +31,16 @@ func getChaseEmoji(p pet.Pet, distX, distY int) string {
 		return "😼" // Energetic/fast
 	}
 
+	// Check hunger level
+	if p.Hunger < 30 {
+		return "🙀" // Hungry/desperate
+	}
+
 	// Check happiness level
 	if p.Happiness < 30 {
 		return "😿" // Sad/slow
 	} else if p.Happiness > 80 {
 		return "😸" // Default happy
-	}
-
-	// Check hunger level
-	if p.Hunger < 30 {
-		return "🙀" // Hungry/desperate
 	}
 
 	// Default emoji

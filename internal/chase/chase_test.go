@@ -574,6 +574,13 @@ func TestGetChaseEmoji(t *testing.T) {
 			expected: "🙀",
 		},
 		{
+			name:     "Hungry takes priority over happy",
+			pet:      pet.Pet{Energy: 50, Happiness: 90, Hunger: 20},
+			distX:    10,
+			distY:    5,
+			expected: "🙀",
+		},
+		{
 			name:     "Default happy pet",
 			pet:      pet.Pet{Energy: 50, Happiness: 50, Hunger: 50},
 			distX:    10,
