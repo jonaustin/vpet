@@ -63,28 +63,28 @@ go test -v -cover ./...
 1. **Create a bd issue** - ALL work must be tracked
    ```bash
    bd create --title="Add feature X" --type=feature
-   # Returns: beads-xxx
+   # Returns: vpet-xxx
    ```
 
 2. **Create a feature branch** - One branch per issue, NEVER commit to main
    ```bash
    # Branch naming: feature/<issue-id>-brief-description
-   git checkout -b feature/beads-xxx-add-feature-x
+   git checkout -b feature/vpet-xxx-add-feature-x
 
    # Update issue status
-   bd update beads-xxx --status=in_progress
+   bd update vpet-xxx --status=in_progress
    ```
 
 3. **Complete work with PR** - ALWAYS use pull requests
    ```bash
    # After committing changes
-   git push -u origin feature/beads-xxx-add-feature-x
+   git push -u origin feature/vpet-xxx-add-feature-x
 
    # Create PR (links to bd issue in description)
-   gh pr create --title "Add feature X" --body "Closes beads-xxx"
+   gh pr create --title "Add feature X" --body "Closes vpet-xxx"
 
    # After PR merged, close issue
-   bd close beads-xxx
+   bd close vpet-xxx
    ```
 
 **Never:**
