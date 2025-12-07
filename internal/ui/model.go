@@ -20,9 +20,11 @@ type Model struct {
 	MessageExpires     time.Time
 	InCheatMenu        bool
 	CheatChoice        int
+	Animation          Animation
 }
 
 type tickMsg time.Time
+type animTickMsg time.Time
 
 // NewModel creates a new game model
 func NewModel() Model {
@@ -42,6 +44,12 @@ func (m Model) Init() tea.Cmd {
 func tick() tea.Cmd {
 	return tea.Tick(time.Minute, func(t time.Time) tea.Msg {
 		return tickMsg(t)
+	})
+}
+
+func animTick() tea.Cmd {
+	return tea.Tick(AnimationFrameDuration, func(t time.Time) tea.Msg {
+		return animTickMsg(t)
 	})
 }
 
@@ -121,13 +129,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			switch m.Choice {
 			case 0:
-				m.feed()
+				if m.feed() {
+					return m, animTick()
+				}
 			case 1:
-				m.play()
+				if m.play() {
+					return m, animTick()
+				}
 			case 2:
-				m.toggleSleep()
+				if m.toggleSleep() {
+					return m, animTick()
+				}
 			case 3:
-				m.administerMedicine()
+				if m.administerMedicine() {
+					return m, animTick()
+				}
 			case 4:
 				m.Quitting = true
 				return m, tea.Quit
@@ -140,6 +156,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.ShowingAdoptPrompt = true
 		}
 		return m, tick()
+
+	case animTickMsg:
+		if m.Animation.Type != AnimNone {
+			m.Animation.Frame++
+			if IsAnimationComplete(m.Animation) {
+				m.Animation = Animation{}
+			} else {
+				return m, animTick()
+			}
+		}
+		return m, nil
 	}
 
 	return m, nil
@@ -156,7 +183,15 @@ func (m *Model) setMessage(msg string) {
 	m.MessageExpires = pet.TimeNow().Add(3 * time.Second)
 }
 
-func (m *Model) administerMedicine() {
+func (m *Model) startAnimation(animType AnimationType) {
+	m.Animation = Animation{
+		Type:      animType,
+		Frame:     0,
+		StartTime: pet.TimeNow(),
+	}
+}
+
+func (m *Model) administerMedicine() bool {
 	m.modifyStats(func(p *pet.Pet) {
 		p.Illness = false
 		bondMultiplier := p.GetBondMultiplier()
@@ -166,12 +201,14 @@ func (m *Model) administerMedicine() {
 		p.UpdateBond(pet.BondGainWellTimed)
 		log.Printf("Administered medicine (bond mult: %.2f). Health is now %d", bondMultiplier, p.Health)
 	})
+	m.startAnimation(AnimMedicine)
+	return true
 }
 
-func (m *Model) feed() {
+func (m *Model) feed() bool {
 	if m.Pet.Hunger >= 90 {
 		m.setMessage("🍽️ Not hungry right now!")
-		return
+		return false
 	}
 
 	recentFeeds := pet.CountRecentInteractions(m.Pet.LastInteractions, "feed", pet.SpamPreventionWindow)
@@ -205,17 +242,19 @@ func (m *Model) feed() {
 			effectiveness, bondMultiplier, p.Hunger, p.Happiness)
 	})
 	m.setMessage("🍖 Yum!")
+	m.startAnimation(AnimFeed)
+	return true
 }
 
-func (m *Model) play() {
+func (m *Model) play() bool {
 	if m.Pet.Energy < pet.AutoSleepThreshold {
 		m.setMessage("😴 Too tired to play...")
-		return
+		return false
 	}
 
 	if m.Pet.Mood == "lazy" && m.Pet.Energy < 50 {
 		m.setMessage("😪 Not in the mood to play...")
-		return
+		return false
 	}
 
 	currentHour := pet.TimeNow().Local().Hour()
@@ -264,15 +303,21 @@ func (m *Model) play() {
 	} else {
 		m.setMessage("🎾 Wheee!")
 	}
+	m.startAnimation(AnimPlay)
+	return true
 }
 
-func (m *Model) toggleSleep() {
+func (m *Model) toggleSleep() bool {
 	m.modifyStats(func(p *pet.Pet) {
 		p.Sleeping = !p.Sleeping
 		p.AutoSleepTime = nil
 		p.FractionalEnergy = 0
 		log.Printf("Pet is now sleeping: %t", p.Sleeping)
 	})
+	if m.Pet.Sleeping {
+		m.startAnimation(AnimSleep)
+	}
+	return m.Pet.Sleeping
 }
 
 func (m *Model) updateHourlyStats(t time.Time) {
