@@ -153,7 +153,7 @@ func setupTestFile(t *testing.T) func() {
 	// Return cleanup function
 	return func() {
 		TestConfigPath = "" // Reset the test path
-		// os.RemoveAll(tmpDir)
+		os.RemoveAll(tmpDir)
 	}
 }
 
