@@ -20,9 +20,13 @@ type Model struct {
 	MessageExpires     time.Time
 	InCheatMenu        bool
 	CheatChoice        int
+	Animation          Animation
 }
 
 type tickMsg time.Time
+type animTickMsg struct {
+	started time.Time
+}
 
 // NewModel creates a new game model
 func NewModel() Model {
@@ -45,10 +49,27 @@ func tick() tea.Cmd {
 	})
 }
 
+func animTick(start time.Time) tea.Cmd {
+	return tea.Tick(AnimationFrameDuration, func(t time.Time) tea.Msg {
+		return animTickMsg{started: start}
+	})
+}
+
 // Update implements tea.Model
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
+		// While an animation is playing, ignore inputs except quit keys
+		if m.Animation.Type != AnimNone {
+			switch msg.String() {
+			case "ctrl+c", "q":
+				m.Quitting = true
+				return m, tea.Quit
+			default:
+				return m, nil
+			}
+		}
+
 		// Handle cheat menu input
 		if m.InCheatMenu {
 			switch msg.String() {
@@ -121,13 +142,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			switch m.Choice {
 			case 0:
-				m.feed()
+				if m.feed() {
+					return m, animTick(m.Animation.StartTime)
+				}
 			case 1:
-				m.play()
+				if m.play() {
+					return m, animTick(m.Animation.StartTime)
+				}
 			case 2:
-				m.toggleSleep()
+				if m.toggleSleep() {
+					return m, animTick(m.Animation.StartTime)
+				}
 			case 3:
-				m.administerMedicine()
+				if m.administerMedicine() {
+					return m, animTick(m.Animation.StartTime)
+				}
 			case 4:
 				m.Quitting = true
 				return m, tea.Quit
@@ -140,6 +169,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.ShowingAdoptPrompt = true
 		}
 		return m, tick()
+
+	case animTickMsg:
+		// Drop ticks that belong to an older animation (e.g., if a new action started)
+		if m.Animation.Type == AnimNone || !m.Animation.StartTime.Equal(msg.started) {
+			return m, nil
+		}
+
+		m.Animation.Frame++
+		if IsAnimationComplete(m.Animation) {
+			m.Animation = Animation{}
+			return m, nil
+		}
+
+		return m, animTick(m.Animation.StartTime)
 	}
 
 	return m, nil
@@ -156,7 +199,15 @@ func (m *Model) setMessage(msg string) {
 	m.MessageExpires = pet.TimeNow().Add(3 * time.Second)
 }
 
-func (m *Model) administerMedicine() {
+func (m *Model) startAnimation(animType AnimationType) {
+	m.Animation = Animation{
+		Type:      animType,
+		Frame:     0,
+		StartTime: pet.TimeNow(),
+	}
+}
+
+func (m *Model) administerMedicine() bool {
 	m.modifyStats(func(p *pet.Pet) {
 		p.Illness = false
 		bondMultiplier := p.GetBondMultiplier()
@@ -166,12 +217,14 @@ func (m *Model) administerMedicine() {
 		p.UpdateBond(pet.BondGainWellTimed)
 		log.Printf("Administered medicine (bond mult: %.2f). Health is now %d", bondMultiplier, p.Health)
 	})
+	m.startAnimation(AnimMedicine)
+	return true
 }
 
-func (m *Model) feed() {
+func (m *Model) feed() bool {
 	if m.Pet.Hunger >= 90 {
 		m.setMessage("🍽️ Not hungry right now!")
-		return
+		return false
 	}
 
 	recentFeeds := pet.CountRecentInteractions(m.Pet.LastInteractions, "feed", pet.SpamPreventionWindow)
@@ -205,17 +258,19 @@ func (m *Model) feed() {
 			effectiveness, bondMultiplier, p.Hunger, p.Happiness)
 	})
 	m.setMessage("🍖 Yum!")
+	m.startAnimation(AnimFeed)
+	return true
 }
 
-func (m *Model) play() {
+func (m *Model) play() bool {
 	if m.Pet.Energy < pet.AutoSleepThreshold {
 		m.setMessage("😴 Too tired to play...")
-		return
+		return false
 	}
 
 	if m.Pet.Mood == "lazy" && m.Pet.Energy < 50 {
 		m.setMessage("😪 Not in the mood to play...")
-		return
+		return false
 	}
 
 	currentHour := pet.TimeNow().Local().Hour()
@@ -264,15 +319,21 @@ func (m *Model) play() {
 	} else {
 		m.setMessage("🎾 Wheee!")
 	}
+	m.startAnimation(AnimPlay)
+	return true
 }
 
-func (m *Model) toggleSleep() {
+func (m *Model) toggleSleep() bool {
 	m.modifyStats(func(p *pet.Pet) {
 		p.Sleeping = !p.Sleeping
 		p.AutoSleepTime = nil
 		p.FractionalEnergy = 0
 		log.Printf("Pet is now sleeping: %t", p.Sleeping)
 	})
+	if m.Pet.Sleeping {
+		m.startAnimation(AnimSleep)
+	}
+	return m.Pet.Sleeping
 }
 
 func (m *Model) updateHourlyStats(t time.Time) {

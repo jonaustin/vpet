@@ -49,6 +49,11 @@ func (m Model) View() string {
 		return m.renderCheatMenu()
 	}
 
+	// Show animation if one is active
+	if m.Animation.Type != AnimNone {
+		return m.renderAnimation()
+	}
+
 	formEmoji := m.Pet.GetFormEmoji()
 	title := gameStyles.title.Render(formEmoji + " " + m.Pet.Name + " " + formEmoji)
 	stats := m.renderStats()
@@ -308,6 +313,34 @@ func (m *Model) executeCheat() {
 	case 15: // Back
 		m.InCheatMenu = false
 	}
+}
+
+func (m Model) renderAnimation() string {
+	frame := GetAnimationFrame(m.Animation)
+	formEmoji := m.Pet.GetFormEmoji()
+	title := gameStyles.title.Render(formEmoji + " " + m.Pet.Name + " " + formEmoji)
+
+	animStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("#FFD700")).
+		Bold(true).
+		Padding(1, 2)
+
+	var status string
+	if m.Message != "" && pet.TimeNow().Before(m.MessageExpires) {
+		status = gameStyles.status.Render(m.Message)
+	}
+
+	sections := []string{
+		title,
+		"",
+		animStyle.Render(frame),
+	}
+
+	if status != "" {
+		sections = append(sections, "", status)
+	}
+
+	return lipgloss.JoinVertical(lipgloss.Left, sections...)
 }
 
 func (m Model) deadView() string {
