@@ -44,6 +44,96 @@ go test -v ./internal/pet -run TestName
 go test -v -cover ./...
 ```
 
+## Development Guidelines
+
+**REQUIRED: Follow this workflow for ALL code changes.**
+
+### Workflow Requirements
+
+1. **Create a bd issue** - ALL work must be tracked
+   ```bash
+   bd create --title="Add feature X" --type=feature
+   # Returns: beads-xxx
+   ```
+
+2. **Create a feature branch** - One branch per issue, NEVER commit to main
+   ```bash
+   # Branch naming: feature/<issue-id>-brief-description
+   git checkout -b feature/beads-xxx-add-feature-x
+
+   # Update issue status
+   bd update beads-xxx --status=in_progress
+   ```
+
+3. **Complete work with PR** - ALWAYS use pull requests
+   ```bash
+   # After committing changes
+   git push -u origin feature/beads-xxx-add-feature-x
+
+   # Create PR (links to bd issue in description)
+   gh pr create --title "Add feature X" --body "Closes beads-xxx"
+
+   # After PR merged, close issue
+   bd close beads-xxx
+   ```
+
+**Never:**
+- ❌ Write code without a bd issue
+- ❌ Commit directly to main branch
+- ❌ Skip pull requests
+- ❌ Reuse branches across multiple issues
+
+### Pre-Implementation Steps
+
+**REQUIRED: Complete this checklist before writing code.**
+
+1. **Search for existing constants** - Check `internal/pet/constants.go` FIRST
+   ```bash
+   # Find thresholds, rates, and effects
+   grep -i "threshold\|rate\|effect\|increase\|decrease" internal/pet/constants.go
+   ```
+
+2. **Study similar implementations** - Find comparable features
+   ```bash
+   # Example: How are stats checked elsewhere?
+   grep -r "LowStatThreshold" internal/
+
+   # Example: How are stats modified?
+   grep -r "modifyStats" internal/ui/
+   ```
+
+3. **Match existing patterns** - Check imports, naming, error handling in similar files
+
+### Code Standards
+
+```go
+// ❌ NEVER: Hardcode magic numbers
+if p.Hunger < 30 {
+    p.Health += 30
+}
+
+// ✅ ALWAYS: Use existing constants
+if p.Hunger < pet.LowStatThreshold {
+    p.Health += pet.MedicineEffect
+}
+```
+
+**Why this matters:**
+- **Constants:** Consistency, one-place updates, self-documenting
+- **bd tracking:** Project visibility, dependency management
+- **Feature branches:** Safe parallel work, clean history
+- **Pull requests:** Code review, CI checks, documented decisions
+
+### Pre-Commit Verification
+
+Before pushing to your feature branch:
+
+- [ ] No magic numbers (use constants or document why)
+- [ ] Imports/naming match existing patterns
+- [ ] Tests added/updated for new functionality
+- [ ] Error handling follows established patterns
+- [ ] Branch contains only changes for this bd issue
+
 ## Architecture
 
 ### Package Structure
