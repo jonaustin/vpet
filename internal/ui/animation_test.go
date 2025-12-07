@@ -1,8 +1,13 @@
 package ui
 
 import (
+	"strings"
 	"testing"
 	"time"
+
+	tea "github.com/charmbracelet/bubbletea"
+
+	"vpet/internal/pet"
 )
 
 func TestAnimationTypes(t *testing.T) {
@@ -122,5 +127,68 @@ func TestAllAnimationsHaveContent(t *testing.T) {
 				t.Errorf("Animation type %v has empty frame at index %d", animType, i)
 			}
 		}
+	}
+}
+
+func TestAnimTickIgnoresStaleTicks(t *testing.T) {
+	start := time.Now()
+	m := Model{Animation: Animation{Type: AnimFeed, Frame: 0, StartTime: start}}
+
+	// Begin a new animation before the stale tick arrives
+	newStart := start.Add(time.Second)
+	m.Animation = Animation{Type: AnimPlay, Frame: 0, StartTime: newStart}
+
+	updated, cmd := m.Update(animTickMsg{started: start})
+	updatedModel := updated.(Model)
+
+	if updatedModel.Animation.Frame != 0 {
+		t.Fatalf("stale tick advanced frame: got %d", updatedModel.Animation.Frame)
+	}
+	if cmd != nil {
+		t.Fatalf("expected no follow-up tick for stale message, got %v", cmd)
+	}
+}
+
+func TestAnimTickAdvancesCurrentAnimation(t *testing.T) {
+	start := time.Now()
+	m := Model{Animation: Animation{Type: AnimFeed, Frame: 0, StartTime: start}}
+
+	updated, cmd := m.Update(animTickMsg{started: start})
+	updatedModel := updated.(Model)
+
+	if updatedModel.Animation.Frame != 1 {
+		t.Fatalf("expected frame to advance to 1, got %d", updatedModel.Animation.Frame)
+	}
+	if cmd == nil {
+		t.Fatalf("expected follow-up tick command for ongoing animation")
+	}
+}
+
+func TestActionsIgnoredDuringAnimation(t *testing.T) {
+	start := time.Now()
+	m := Model{Animation: Animation{Type: AnimFeed, Frame: 0, StartTime: start}, Choice: 0}
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	updatedModel := updated.(Model)
+
+	if updatedModel.Animation.StartTime != start {
+		t.Fatalf("animation should not change while active; startTime changed")
+	}
+	if cmd != nil {
+		t.Fatalf("expected no command when input ignored during animation, got %v", cmd)
+	}
+}
+
+func TestRenderAnimationSkipsExpiredMessage(t *testing.T) {
+	m := Model{
+		Pet:            pet.Pet{Name: "Milo"},
+		Animation:      Animation{Type: AnimFeed, Frame: 0, StartTime: time.Now()},
+		Message:        "hello",
+		MessageExpires: time.Now().Add(-time.Minute),
+	}
+
+	view := m.renderAnimation()
+	if strings.Contains(view, "hello") {
+		t.Fatalf("expected expired message to be omitted from animation view")
 	}
 }

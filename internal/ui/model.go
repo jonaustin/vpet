@@ -24,7 +24,9 @@ type Model struct {
 }
 
 type tickMsg time.Time
-type animTickMsg time.Time
+type animTickMsg struct {
+	started time.Time
+}
 
 // NewModel creates a new game model
 func NewModel() Model {
@@ -47,9 +49,9 @@ func tick() tea.Cmd {
 	})
 }
 
-func animTick() tea.Cmd {
+func animTick(start time.Time) tea.Cmd {
 	return tea.Tick(AnimationFrameDuration, func(t time.Time) tea.Msg {
-		return animTickMsg(t)
+		return animTickMsg{started: start}
 	})
 }
 
@@ -57,6 +59,17 @@ func animTick() tea.Cmd {
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
+		// While an animation is playing, ignore inputs except quit keys
+		if m.Animation.Type != AnimNone {
+			switch msg.String() {
+			case "ctrl+c", "q":
+				m.Quitting = true
+				return m, tea.Quit
+			default:
+				return m, nil
+			}
+		}
+
 		// Handle cheat menu input
 		if m.InCheatMenu {
 			switch msg.String() {
@@ -130,19 +143,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			switch m.Choice {
 			case 0:
 				if m.feed() {
-					return m, animTick()
+					return m, animTick(m.Animation.StartTime)
 				}
 			case 1:
 				if m.play() {
-					return m, animTick()
+					return m, animTick(m.Animation.StartTime)
 				}
 			case 2:
 				if m.toggleSleep() {
-					return m, animTick()
+					return m, animTick(m.Animation.StartTime)
 				}
 			case 3:
 				if m.administerMedicine() {
-					return m, animTick()
+					return m, animTick(m.Animation.StartTime)
 				}
 			case 4:
 				m.Quitting = true
@@ -158,15 +171,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tick()
 
 	case animTickMsg:
-		if m.Animation.Type != AnimNone {
-			m.Animation.Frame++
-			if IsAnimationComplete(m.Animation) {
-				m.Animation = Animation{}
-			} else {
-				return m, animTick()
-			}
+		// Drop ticks that belong to an older animation (e.g., if a new action started)
+		if m.Animation.Type == AnimNone || !m.Animation.StartTime.Equal(msg.started) {
+			return m, nil
 		}
-		return m, nil
+
+		m.Animation.Frame++
+		if IsAnimationComplete(m.Animation) {
+			m.Animation = Animation{}
+			return m, nil
+		}
+
+		return m, animTick(m.Animation.StartTime)
 	}
 
 	return m, nil

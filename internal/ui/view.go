@@ -325,13 +325,22 @@ func (m Model) renderAnimation() string {
 		Bold(true).
 		Padding(1, 2)
 
-	return lipgloss.JoinVertical(lipgloss.Left,
+	var status string
+	if m.Message != "" && pet.TimeNow().Before(m.MessageExpires) {
+		status = gameStyles.status.Render(m.Message)
+	}
+
+	sections := []string{
 		title,
 		"",
 		animStyle.Render(frame),
-		"",
-		gameStyles.status.Render(m.Message),
-	)
+	}
+
+	if status != "" {
+		sections = append(sections, "", status)
+	}
+
+	return lipgloss.JoinVertical(lipgloss.Left, sections...)
 }
 
 func (m Model) deadView() string {
