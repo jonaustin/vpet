@@ -390,9 +390,25 @@ func TestModel_View_ContainsPetAndTarget(t *testing.T) {
 		t.Errorf("View should contain target emoji %q", m.Target.Emoji)
 	}
 
-	// View should contain pet emoji
-	if !strings.Contains(view, "😸") {
-		t.Error("View should contain pet emoji 😸")
+	// View should contain some pet emoji (check for common chase emojis)
+	petEmojis := []string{
+		pet.StatusEmojiHappy,
+		pet.StatusEmojiNeutral,
+		pet.StatusEmojiSleeping,
+		pet.StatusEmojiEnergetic,
+		pet.StatusEmojiSad,
+		pet.StatusEmojiHungry,
+		pet.StatusEmojiExcited,
+	}
+	found := false
+	for _, emoji := range petEmojis {
+		if strings.Contains(view, emoji) {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("View should contain a pet emoji")
 	}
 
 	// View should contain exit instruction
@@ -510,6 +526,82 @@ func TestModel_PetHorizontalMovementThreshold(t *testing.T) {
 			moved := updated.PetPosX > m.PetPosX
 			if moved != tt.wantMove {
 				t.Errorf("Pet moved = %v, want %v (distX = %d)", moved, tt.wantMove, tt.distX)
+			}
+		})
+	}
+}
+
+func TestGetChaseEmoji(t *testing.T) {
+	tests := []struct {
+		name     string
+		pet      pet.Pet
+		distX    int
+		distY    int
+		expected string
+	}{
+		{
+			name:     "About to catch - close distance",
+			pet:      pet.Pet{Energy: 50, Happiness: 50, Hunger: 50},
+			distX:    1,
+			distY:    0,
+			expected: pet.StatusEmojiExcited,
+		},
+		{
+			name:     "Tired pet - low energy",
+			pet:      pet.Pet{Energy: 20, Happiness: 50, Hunger: 50},
+			distX:    10,
+			distY:    5,
+			expected: pet.StatusEmojiSleeping,
+		},
+		{
+			name:     "Energetic pet - high energy",
+			pet:      pet.Pet{Energy: 90, Happiness: 50, Hunger: 50},
+			distX:    10,
+			distY:    5,
+			expected: pet.StatusEmojiEnergetic,
+		},
+		{
+			name:     "Sad pet - low happiness",
+			pet:      pet.Pet{Energy: 50, Happiness: 20, Hunger: 50},
+			distX:    10,
+			distY:    5,
+			expected: pet.StatusEmojiSad,
+		},
+		{
+			name:     "Happy pet - high happiness",
+			pet:      pet.Pet{Energy: 50, Happiness: 90, Hunger: 50},
+			distX:    10,
+			distY:    5,
+			expected: pet.StatusEmojiHappy,
+		},
+		{
+			name:     "Hungry pet - low hunger",
+			pet:      pet.Pet{Energy: 50, Happiness: 50, Hunger: 20},
+			distX:    10,
+			distY:    5,
+			expected: pet.StatusEmojiHungry,
+		},
+		{
+			name:     "Hungry takes priority over energetic",
+			pet:      pet.Pet{Energy: 90, Happiness: 90, Hunger: 20},
+			distX:    10,
+			distY:    5,
+			expected: pet.StatusEmojiHungry,
+		},
+		{
+			name:     "Default neutral pet",
+			pet:      pet.Pet{Energy: 50, Happiness: 50, Hunger: 50},
+			distX:    10,
+			distY:    5,
+			expected: pet.StatusEmojiNeutral,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := getChaseEmoji(tt.pet, tt.distX, tt.distY)
+			if result != tt.expected {
+				t.Errorf("getChaseEmoji() = %v, want %v", result, tt.expected)
 			}
 		})
 	}

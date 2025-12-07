@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"fmt"
 	"log"
 	"time"
 
@@ -264,7 +265,7 @@ func (m *Model) feed() bool {
 
 func (m *Model) play() bool {
 	if m.Pet.Energy < pet.AutoSleepThreshold {
-		m.setMessage("😴 Too tired to play...")
+		m.setMessage(fmt.Sprintf("%s Too tired to play...", pet.StatusEmojiSleeping))
 		return false
 	}
 
