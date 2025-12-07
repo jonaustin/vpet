@@ -3456,3 +3456,238 @@ func TestStatusLabelSleepingWithLowEnergy(t *testing.T) {
 		}
 	})
 }
+
+func TestNegativeAndErrorCases(t *testing.T) {
+	cleanup := setupTestFile(t)
+	defer cleanup()
+
+	t.Run("UpdateBond clamps values at maximum", func(t *testing.T) {
+		pet := NewPet(nil)
+		pet.Bond = 95
+
+		// Try to exceed max bond
+		pet.UpdateBond(10)
+
+		if pet.Bond != MaxBond {
+			t.Errorf("Expected bond to be clamped at %d, got %d", MaxBond, pet.Bond)
+		}
+	})
+
+	t.Run("UpdateBond clamps values at minimum", func(t *testing.T) {
+		pet := NewPet(nil)
+		pet.Bond = 5
+
+		// Try to go below zero
+		pet.UpdateBond(-10)
+
+		if pet.Bond != 0 {
+			t.Errorf("Expected bond to be clamped at 0, got %d", pet.Bond)
+		}
+	})
+
+	t.Run("UpdateBond handles large negative values", func(t *testing.T) {
+		pet := NewPet(nil)
+		pet.Bond = 50
+
+		// Extreme negative value
+		pet.UpdateBond(-1000)
+
+		if pet.Bond != 0 {
+			t.Errorf("Expected bond to be clamped at 0 with large negative, got %d", pet.Bond)
+		}
+	})
+
+	t.Run("UpdateBond handles large positive values", func(t *testing.T) {
+		pet := NewPet(nil)
+		pet.Bond = 50
+
+		// Extreme positive value
+		pet.UpdateBond(1000)
+
+		if pet.Bond != MaxBond {
+			t.Errorf("Expected bond to be clamped at %d with large positive, got %d", MaxBond, pet.Bond)
+		}
+	})
+
+	t.Run("LoadState handles missing file gracefully", func(t *testing.T) {
+		// File doesn't exist, should create new pet
+		pet := LoadState()
+
+		if pet.Name == "" {
+			t.Error("Expected new pet to have default name")
+		}
+		if pet.Dead {
+			t.Error("New pet should not be dead")
+		}
+		if pet.Health != MaxStat {
+			t.Errorf("New pet should have max health, got %d", pet.Health)
+		}
+	})
+
+	t.Run("LoadState handles corrupted JSON", func(t *testing.T) {
+		// Write invalid JSON to file
+		err := os.WriteFile(TestConfigPath, []byte("{invalid json}"), 0644)
+		if err != nil {
+			t.Fatalf("Failed to write test file: %v", err)
+		}
+
+		// Should create new pet instead of crashing
+		pet := LoadState()
+
+		if pet.Name == "" {
+			t.Error("Expected new pet to have default name after JSON error")
+		}
+		if pet.Dead {
+			t.Error("New pet should not be dead after JSON error")
+		}
+	})
+
+	t.Run("LoadState handles empty file", func(t *testing.T) {
+		// Write empty file
+		err := os.WriteFile(TestConfigPath, []byte(""), 0644)
+		if err != nil {
+			t.Fatalf("Failed to write test file: %v", err)
+		}
+
+		// Should create new pet
+		pet := LoadState()
+
+		if pet.Name == "" {
+			t.Error("Expected new pet to have default name after empty file")
+		}
+	})
+
+	t.Run("GetTraitModifier with empty traits returns 1.0", func(t *testing.T) {
+		pet := NewPet(nil)
+		pet.Traits = []Trait{} // No traits
+
+		modifier := pet.GetTraitModifier("any_key")
+
+		if modifier != 1.0 {
+			t.Errorf("Expected modifier 1.0 with no traits, got %f", modifier)
+		}
+	})
+
+	t.Run("GetTraitModifier with nil traits returns 1.0", func(t *testing.T) {
+		pet := NewPet(nil)
+		pet.Traits = nil // Nil traits
+
+		modifier := pet.GetTraitModifier("any_key")
+
+		if modifier != 1.0 {
+			t.Errorf("Expected modifier 1.0 with nil traits, got %f", modifier)
+		}
+	})
+
+	t.Run("CountRecentInteractions with empty history returns 0", func(t *testing.T) {
+		count := CountRecentInteractions([]Interaction{}, "feed", 1*time.Hour)
+
+		if count != 0 {
+			t.Errorf("Expected 0 interactions with empty history, got %d", count)
+		}
+	})
+
+	t.Run("CountRecentInteractions with nil history returns 0", func(t *testing.T) {
+		count := CountRecentInteractions(nil, "feed", 1*time.Hour)
+
+		if count != 0 {
+			t.Errorf("Expected 0 interactions with nil history, got %d", count)
+		}
+	})
+
+	t.Run("AddInteraction maintains history limit", func(t *testing.T) {
+		pet := NewPet(nil)
+		pet.LastInteractions = []Interaction{}
+
+		// Add more than max
+		for i := 0; i < MaxInteractionHistory+10; i++ {
+			pet.AddInteraction("feed")
+		}
+
+		if len(pet.LastInteractions) != MaxInteractionHistory {
+			t.Errorf("Expected interaction history limited to %d, got %d",
+				MaxInteractionHistory, len(pet.LastInteractions))
+		}
+	})
+
+	t.Run("CalculateCareQuality with no checkpoints returns max stats", func(t *testing.T) {
+		pet := NewPet(nil)
+		pet.StatCheckpoints = nil
+
+		quality := pet.CalculateCareQuality(0)
+
+		if quality.AvgHunger != MaxStat || quality.AvgHappiness != MaxStat ||
+			quality.AvgEnergy != MaxStat || quality.AvgHealth != MaxStat {
+			t.Errorf("Expected max stats with no checkpoints, got %+v", quality)
+		}
+	})
+
+	t.Run("CalculateCareQuality with empty stage returns max stats", func(t *testing.T) {
+		pet := NewPet(nil)
+		pet.StatCheckpoints = make(map[string][]StatCheck)
+		pet.StatCheckpoints["stage_0"] = []StatCheck{} // Empty checkpoints
+
+		quality := pet.CalculateCareQuality(0)
+
+		if quality.AvgHunger != MaxStat || quality.AvgHappiness != MaxStat ||
+			quality.AvgEnergy != MaxStat || quality.AvgHealth != MaxStat {
+			t.Errorf("Expected max stats with empty checkpoints, got %+v", quality)
+		}
+	})
+
+	t.Run("Fractional energy accumulation handles precision", func(t *testing.T) {
+		pet := NewPet(nil)
+		pet.Energy = 50
+		pet.FractionalEnergy = 0.9
+
+		// Simulate small gain that creates fractional accumulation
+		pet.FractionalEnergy += 0.2 // Total 1.1
+
+		// Should carry over 1 to Energy and keep 0.1 fractional
+		intPart := int(pet.FractionalEnergy)
+		pet.Energy += intPart
+		pet.FractionalEnergy -= float64(intPart)
+
+		if pet.Energy != 51 {
+			t.Errorf("Expected energy 51, got %d", pet.Energy)
+		}
+		epsilon := 0.0001
+		if pet.FractionalEnergy < 0.1-epsilon || pet.FractionalEnergy > 0.1+epsilon {
+			t.Errorf("Expected fractional ~0.1, got %f", pet.FractionalEnergy)
+		}
+	})
+
+	t.Run("GetFormName handles unknown form", func(t *testing.T) {
+		pet := NewPet(nil)
+		pet.Form = PetForm(999) // Invalid form
+
+		name := pet.GetFormName()
+
+		if name != "Unknown" {
+			t.Errorf("Expected 'Unknown' for invalid form, got %q", name)
+		}
+	})
+
+	t.Run("GetFormEmoji handles unknown form", func(t *testing.T) {
+		pet := NewPet(nil)
+		pet.Form = PetForm(999) // Invalid form
+
+		emoji := pet.GetFormEmoji()
+
+		if emoji != "❓" {
+			t.Errorf("Expected '❓' for invalid form, got %q", emoji)
+		}
+	})
+
+	t.Run("IsActiveHours with invalid chronotype defaults to Normal", func(t *testing.T) {
+		pet := NewPet(nil)
+		pet.Chronotype = "invalid_chronotype"
+
+		// Should use Normal schedule (7am-11pm)
+		active := IsActiveHours(&pet, 8)
+
+		if !active {
+			t.Error("Expected hour 8 to be active with default Normal schedule")
+		}
+	})
+}
