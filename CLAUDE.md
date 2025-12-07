@@ -88,6 +88,7 @@ go test -v -cover ./...
    ```bash
    # After PR is merged to main
    bd close vpet-xxx
+   bd sync                    # commits closure to main branch, pushes
    ```
 
 **Never:**
