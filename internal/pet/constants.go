@@ -35,7 +35,7 @@ const (
 	NeglectThreshold     = 20
 
 	// High stat thresholds
-	HighStatThreshold    = 80 // Threshold for "very high" stats
+	HighStatThreshold    = 80 // Threshold for "very high" stats (used in chase mode for excited emoji)
 
 	// Autonomous behavior thresholds
 	AutoSleepThreshold  = 20 // Energy level that triggers auto-sleep

@@ -589,11 +589,11 @@ func TestGetChaseEmoji(t *testing.T) {
 			expected: pet.StatusEmojiHungry,
 		},
 		{
-			name:     "Default neutral pet",
+			name:     "Default happy pet",
 			pet:      pet.Pet{Energy: 50, Happiness: 50, Hunger: 50},
 			distX:    10,
 			distY:    5,
-			expected: pet.StatusEmojiNeutral,
+			expected: pet.StatusEmojiHappy,
 		},
 	}
 

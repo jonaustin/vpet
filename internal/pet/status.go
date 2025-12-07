@@ -73,11 +73,11 @@ func GetStatusWithLabel(p Pet) string {
 	status := GetStatus(p)
 
 	switch {
-	case strings.Contains(status, "😴") && strings.Contains(status, "😾"):
+	case strings.Contains(status, StatusEmojiSleeping) && strings.Contains(status, StatusEmojiTired):
 		return status + " Sleeping"
-	case strings.Contains(status, "😴") && len(status) > 4:
+	case strings.Contains(status, StatusEmojiSleeping) && len(status) > 4:
 		return status + " Sleeping (needs care)"
-	case strings.Contains(status, "😴"):
+	case strings.Contains(status, StatusEmojiSleeping):
 		return status + " Sleeping"
 	case strings.Contains(status, "🦋"):
 		return status + " Chasing!"
@@ -87,7 +87,7 @@ func GetStatusWithLabel(p Pet) string {
 		return status + " Scared!"
 	case strings.Contains(status, "💭"):
 		return status + " Daydreaming"
-	case strings.Contains(status, "🤢") && strings.HasPrefix(status, "🤢"):
+	case strings.Contains(status, StatusEmojiSick) && strings.HasPrefix(status, StatusEmojiSick):
 		return status + " Ate something!"
 	case strings.Contains(status, "🎵"):
 		return status + " Singing!"
@@ -97,13 +97,13 @@ func GetStatusWithLabel(p Pet) string {
 		return status + " Zoomies!"
 	case strings.Contains(status, "🥺") && strings.HasPrefix(status, "🥺"):
 		return status + " Wants cuddles!"
-	case strings.Contains(status, "🙀"):
+	case strings.Contains(status, StatusEmojiHungry):
 		return status + " Hungry"
-	case strings.Contains(status, "😾"):
+	case strings.Contains(status, StatusEmojiTired):
 		return status + " Tired"
-	case strings.Contains(status, "😿"):
+	case strings.Contains(status, StatusEmojiSad):
 		return status + " Sad"
-	case strings.Contains(status, "🤢"):
+	case strings.Contains(status, StatusEmojiSick):
 		return status + " Sick"
 	case strings.Contains(status, "🥱"):
 		return status + " Drowsy"
