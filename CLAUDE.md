@@ -1,10 +1,18 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance for AI assistants working with code in this repository.
 
 ## Project Overview
 
 vpet is a Tamagotchi-style virtual pet that lives in your terminal with tmux integration. It uses the Bubble Tea TUI framework. The pet has lifecycle mechanics with aging, stats that decay over time, random illnesses, and multiple death conditions.
+
+## Critical Rules (TL;DR)
+
+1. **NEVER commit to main** - Always use feature branches (`feature/<issue-id>-description`)
+2. **NEVER hardcode numbers** - Search `internal/pet/constants.go` first
+3. **ALL work needs a bd issue** - `bd create --title="..." --type=task|bug|feature`
+4. **ALWAYS use pull requests** - No direct pushes, no skipping review
+5. **ALWAYS add tests** - No untested code
 
 ## Development Commands
 
@@ -44,6 +52,121 @@ go test -v ./internal/pet -run TestName
 go test -v -cover ./...
 ```
 
+## Development Guidelines
+
+**REQUIRED: Follow this workflow for ALL code changes.**
+
+### Workflow Requirements
+
+> **Note:** `bd` (beads) is a local issue tracker stored in `.beads/`. Run `bd --help` for commands.
+
+1. **Create a bd issue** - ALL work must be tracked
+   ```bash
+   bd create --title="Add feature X" --type=feature
+   # Returns: vpet-xxx
+   ```
+
+2. **Create a feature branch** - One branch per issue, NEVER commit to main
+   ```bash
+   # Branch naming: feature/<issue-id>-brief-description
+   git checkout -b feature/vpet-xxx-add-feature-x
+
+   # Update issue status
+   bd update vpet-xxx --status=in_progress
+   ```
+
+3. **Create PR** - ALWAYS use pull requests
+   ```bash
+   # After committing changes
+   git push -u origin feature/vpet-xxx-add-feature-x
+
+   # Create PR (reference issue, but don't close yet)
+   gh pr create --title "Add feature X" --body "Addresses vpet-xxx"
+   ```
+
+4. **Close issue AFTER merge** - Only close when PR is merged to main
+   ```bash
+   # After PR is merged to main
+   bd close vpet-xxx
+   ```
+
+**Never:**
+- ❌ Write code without a bd issue
+- ❌ Commit directly to main branch
+- ❌ Skip pull requests
+- ❌ Reuse branches across multiple issues
+- ❌ Close a bd issue before its PR is merged to main
+
+### Pre-Implementation Steps
+
+**REQUIRED: Complete this checklist before writing code.**
+
+1. **Search for existing constants** - Check `internal/pet/constants.go` FIRST
+   ```bash
+   # Find thresholds, rates, and effects
+   grep -i "threshold\|rate\|effect\|increase\|decrease" internal/pet/constants.go
+   ```
+   > Or read the file directly - it's small (~100 lines)
+
+2. **Study similar implementations** - Find comparable features
+   ```bash
+   # Example: How are stats checked elsewhere?
+   grep -r "LowStatThreshold" internal/
+
+   # Example: How are stats modified?
+   grep -r "modifyStats" internal/ui/
+   ```
+
+3. **Match existing patterns** - Check imports, naming, error handling in similar files
+
+### Code Standards
+
+```go
+// ❌ NEVER: Hardcode magic numbers
+if p.Hunger < 30 {
+    p.Health += 30
+}
+
+// ✅ ALWAYS: Use existing constants
+if p.Hunger < pet.LowStatThreshold {
+    p.Health += pet.MedicineEffect
+}
+```
+
+**Why this matters:**
+- **Constants:** Consistency, one-place updates, self-documenting
+- **bd tracking:** Project visibility, dependency management
+- **Feature branches:** Safe parallel work, clean history
+- **Pull requests:** Code review, CI checks, documented decisions
+
+### Pre-Commit Verification
+
+Before pushing to your feature branch:
+
+- [ ] No magic numbers (use constants or document why)
+- [ ] Imports/naming match existing patterns
+- [ ] Tests added/updated for new functionality
+- [ ] Error handling follows established patterns
+- [ ] Branch contains only changes for this bd issue
+
+### When Uncertain
+
+If unsure about any of the following, **ASK before proceeding:**
+
+- Which constant to use (or whether to create a new one)
+- Whether to create a new file vs. modify existing
+- How to name something (functions, variables, files)
+- Whether a change warrants a new bd issue
+- Architectural decisions that affect multiple packages
+
+### If Build/Tests Fail
+
+1. **Read the error carefully** - Understand what failed and why
+2. **Check your changes** - Run `git diff` to see what you modified
+3. **Fix before committing** - Never commit broken code
+4. **Run tests locally** - `go test ./...` before pushing
+5. **If stuck** - Describe the error clearly and ask for guidance
+
 ## Architecture
 
 ### Package Structure
@@ -51,7 +174,7 @@ go test -v -cover ./...
 ```
 vpet/
 ├── main.go                      # Entry point, flags, wiring
-├── internal/
+├── internal/                    # Private packages (Go convention: not importable externally)
 │   ├── pet/
 │   │   ├── pet.go               # Pet struct, stats, lifecycle, evolution
 │   │   ├── constants.go         # Decay rates, thresholds, form definitions
