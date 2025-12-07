@@ -34,6 +34,9 @@ const (
 	PoorCareThreshold    = 40
 	NeglectThreshold     = 20
 
+	// High stat thresholds
+	HighStatThreshold    = 80 // Threshold for "very high" stats
+
 	// Autonomous behavior thresholds
 	AutoSleepThreshold  = 20 // Energy level that triggers auto-sleep
 	DrowsyThreshold     = 40 // Energy level that shows drowsy status
@@ -63,6 +66,14 @@ const (
 	BondGainNormal        = 1             // Bond gained for normal action
 	IllnessResistanceBond = 70            // Bond level that starts reducing illness chance
 	MaxInteractionHistory = 20            // Keep last 20 interactions
+
+	// Status emojis
+	StatusEmojiHappy       = "😸" // Default happy status
+	StatusEmojiSleeping    = "😴" // Sleeping/tired
+	StatusEmojiHungry      = "🙀" // Hungry/desperate
+	StatusEmojiSad         = "😿" // Sad/unhappy
+	StatusEmojiEnergetic   = "😼" // Energetic/fast
+	StatusEmojiExcited     = "😻" // Excited/about to catch
 )
 
 // Chronotype constants

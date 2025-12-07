@@ -391,7 +391,14 @@ func TestModel_View_ContainsPetAndTarget(t *testing.T) {
 	}
 
 	// View should contain some pet emoji (check for common chase emojis)
-	petEmojis := []string{"😸", "😴", "😼", "😿", "🙀", "😻"}
+	petEmojis := []string{
+		pet.StatusEmojiHappy,
+		pet.StatusEmojiSleeping,
+		pet.StatusEmojiEnergetic,
+		pet.StatusEmojiSad,
+		pet.StatusEmojiHungry,
+		pet.StatusEmojiExcited,
+	}
 	found := false
 	for _, emoji := range petEmojis {
 		if strings.Contains(view, emoji) {
@@ -536,56 +543,56 @@ func TestGetChaseEmoji(t *testing.T) {
 			pet:      pet.Pet{Energy: 50, Happiness: 50, Hunger: 50},
 			distX:    1,
 			distY:    0,
-			expected: "😻",
+			expected: pet.StatusEmojiExcited,
 		},
 		{
 			name:     "Tired pet - low energy",
 			pet:      pet.Pet{Energy: 20, Happiness: 50, Hunger: 50},
 			distX:    10,
 			distY:    5,
-			expected: "😴",
+			expected: pet.StatusEmojiSleeping,
 		},
 		{
 			name:     "Energetic pet - high energy",
 			pet:      pet.Pet{Energy: 90, Happiness: 50, Hunger: 50},
 			distX:    10,
 			distY:    5,
-			expected: "😼",
+			expected: pet.StatusEmojiEnergetic,
 		},
 		{
 			name:     "Sad pet - low happiness",
 			pet:      pet.Pet{Energy: 50, Happiness: 20, Hunger: 50},
 			distX:    10,
 			distY:    5,
-			expected: "😿",
+			expected: pet.StatusEmojiSad,
 		},
 		{
 			name:     "Happy pet - high happiness",
 			pet:      pet.Pet{Energy: 50, Happiness: 90, Hunger: 50},
 			distX:    10,
 			distY:    5,
-			expected: "😸",
+			expected: pet.StatusEmojiHappy,
 		},
 		{
 			name:     "Hungry pet - low hunger",
 			pet:      pet.Pet{Energy: 50, Happiness: 50, Hunger: 20},
 			distX:    10,
 			distY:    5,
-			expected: "🙀",
+			expected: pet.StatusEmojiHungry,
 		},
 		{
 			name:     "Hungry takes priority over happy",
 			pet:      pet.Pet{Energy: 50, Happiness: 90, Hunger: 20},
 			distX:    10,
 			distY:    5,
-			expected: "🙀",
+			expected: pet.StatusEmojiHungry,
 		},
 		{
 			name:     "Default happy pet",
 			pet:      pet.Pet{Energy: 50, Happiness: 50, Hunger: 50},
 			distX:    10,
 			distY:    5,
-			expected: "😸",
+			expected: pet.StatusEmojiHappy,
 		},
 	}
 

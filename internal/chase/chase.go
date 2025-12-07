@@ -21,30 +21,30 @@ const (
 func getChaseEmoji(p pet.Pet, distX, distY int) string {
 	// Check if pet is about to catch (very close)
 	if absInt(distX) <= 2 && absInt(distY) <= 1 {
-		return "😻" // Excited about to catch
+		return pet.StatusEmojiExcited // Excited about to catch
 	}
 
 	// Check energy level - affects speed emoji
 	if p.Energy < pet.LowStatThreshold {
-		return "😴" // Tired/slow
+		return pet.StatusEmojiSleeping // Tired/slow
 	} else if p.Energy > pet.AutoWakeEnergy {
-		return "😼" // Energetic/fast
+		return pet.StatusEmojiEnergetic // Energetic/fast
 	}
 
 	// Check hunger level
 	if p.Hunger < pet.LowStatThreshold {
-		return "🙀" // Hungry/desperate
+		return pet.StatusEmojiHungry // Hungry/desperate
 	}
 
 	// Check happiness level
 	if p.Happiness < pet.LowStatThreshold {
-		return "😿" // Sad/slow
-	} else if p.Happiness > 80 {
-		return "😸" // Default happy
+		return pet.StatusEmojiSad // Sad/slow
+	} else if p.Happiness > pet.HighStatThreshold {
+		return pet.StatusEmojiHappy // Default happy
 	}
 
 	// Default emoji
-	return "😸"
+	return pet.StatusEmojiHappy
 }
 
 // Target defines what the pet can chase
