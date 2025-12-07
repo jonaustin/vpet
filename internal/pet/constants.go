@@ -77,6 +77,7 @@ const (
 	StatusEmojiExcited     = "😻" // Excited/about to catch
 	StatusEmojiSick        = "🤢" // Sick/ill
 	StatusEmojiTired       = "😾" // Tired/grumpy
+	StatusEmojiDead        = "💀" // Dead
 )
 
 // Chronotype constants

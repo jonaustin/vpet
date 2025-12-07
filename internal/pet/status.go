@@ -5,7 +5,7 @@ import "strings"
 // GetStatus returns the status emoji(s) for the pet
 func GetStatus(p Pet) string {
 	if p.Dead {
-		return "💀"
+		return StatusEmojiDead
 	}
 
 	// Icon 1: Activity (what pet is DOING)
