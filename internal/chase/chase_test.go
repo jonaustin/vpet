@@ -11,9 +11,9 @@ import (
 
 func TestTargets(t *testing.T) {
 	tests := []struct {
-		name     string
-		target   string
-		wantName string
+		name      string
+		target    string
+		wantName  string
 		wantEmoji string
 	}{
 		{
@@ -172,7 +172,7 @@ func TestModel_Update_AnimTick_TargetReachesEdge(t *testing.T) {
 		Target:     Targets["butterfly"],
 		TermWidth:  80,
 		TermHeight: 24,
-		Frame:      2, // Frame % 3 == 2, so next tick will move target
+		Frame:      2,  // Frame % 3 == 2, so next tick will move target
 		TargetPosX: 79, // Near edge
 		TargetPosY: 12,
 	}
@@ -274,6 +274,25 @@ func TestModel_Update_AnimTick_PetVerticalMovement(t *testing.T) {
 	}
 }
 
+func TestModel_Update_AnimTick_CatchEndsRun(t *testing.T) {
+	m := Model{
+		Pet:        pet.Pet{},
+		Target:     Targets["butterfly"],
+		TermWidth:  40,
+		TermHeight: 10,
+		Frame:      0,
+		PetPosX:    5,
+		PetPosY:    3,
+		TargetPosX: 6,
+		TargetPosY: 3,
+	}
+
+	_, cmd := m.Update(animTickMsg{})
+	if cmd == nil {
+		t.Fatalf("expected quit command when pet catches target")
+	}
+}
+
 func TestModel_Update_AnimTick_BoundaryConstraints(t *testing.T) {
 	// Test that target stays within boundaries during sine wave movement
 	t.Run("Target stays within vertical boundaries", func(t *testing.T) {
@@ -289,8 +308,8 @@ func TestModel_Update_AnimTick_BoundaryConstraints(t *testing.T) {
 			PetPosY:    12,
 		}
 
-		minY := 2
-		maxY := 19 // termHeight - 5
+		minY := 0
+		maxY := m.visibleRows() - 1
 
 		// Run many frames to traverse the full sine wave
 		for i := 0; i < 50; i++ {
@@ -320,8 +339,8 @@ func TestModel_Update_AnimTick_BoundaryConstraints(t *testing.T) {
 			PetPosY:    12,
 		}
 
-		minY := 2
-		maxY := 19 // termHeight - 5
+		minY := 0
+		maxY := m.visibleRows() - 1
 
 		// Run frames until pet moves and gets clamped
 		for i := 0; i < 20; i++ {
@@ -397,11 +416,34 @@ func TestModel_View_GridDimensions(t *testing.T) {
 	view := m.View()
 	lines := strings.Split(view, "\n")
 
-	// Should have termHeight - 3 grid lines + 1 blank + 1 instruction line
-	// Total = termHeight - 1
-	expectedLines := m.TermHeight - 1
+	// View renders rows-1 grid lines, then a blank, then the instruction line.
+	expectedLines := m.visibleRows() + 1
 	if len(lines) != expectedLines {
 		t.Errorf("View has %d lines, want %d", len(lines), expectedLines)
+	}
+}
+
+func TestVisibleRowsMinimum(t *testing.T) {
+	m := Model{TermHeight: 3}
+	if got := m.visibleRows(); got != 6 {
+		t.Fatalf("visibleRows min should be 6, got %d", got)
+	}
+}
+
+func TestClampOnResize(t *testing.T) {
+	m := Model{
+		TermWidth:  10,
+		TermHeight: 10,
+		PetPosY:    20,
+		TargetPosY: -5,
+	}
+
+	m.clampPositions()
+	if m.PetPosY != m.visibleRows()-1 {
+		t.Fatalf("pet Y should clamp to %d, got %d", m.visibleRows()-1, m.PetPosY)
+	}
+	if m.TargetPosY != 0 {
+		t.Fatalf("target Y should clamp to 0, got %d", m.TargetPosY)
 	}
 }
 
@@ -427,9 +469,9 @@ func TestModel_View_OutOfBoundsPositions(t *testing.T) {
 func TestModel_PetHorizontalMovementThreshold(t *testing.T) {
 	// Pet only moves horizontally if distance > 3
 	tests := []struct {
-		name      string
-		distX     int
-		wantMove  bool
+		name     string
+		distX    int
+		wantMove bool
 	}{
 		{
 			name:     "Pet moves when distX > 3",

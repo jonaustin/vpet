@@ -9,6 +9,7 @@ Key decisions
 - **Rendering:** Use slice of strings, each row with target/pet if present; background filler for empty rows. Keep glyph widths ≤2 columns.
 - **Tick rate:** Keep existing chase tick; update positions each tick based on velocity/direction.
 - **Config knobs:** `--chase-rows` optional override; default derived from terminal rows minus margin; minimum 3 rows.
+- **Tests:** Unit-test Y movement generator, clamp logic, and catch condition; snapshot golden view with fixed seed.
 
 Risks / mitigations
 - **Terminal flicker:** Use single lipgloss renderer with JoinVertical; avoid per-row lipgloss styles to keep perf.
@@ -20,3 +21,4 @@ Next steps
 2) Implement target Y movement generator (sine + noise).
 3) Update pet AI to chase Y with lag and optional easing.
 4) Update view to render multiple rows and adjust catch logic/tests.
+5) Add seeds/flags to make snapshots deterministic for tests.
