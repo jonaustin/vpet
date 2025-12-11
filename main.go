@@ -31,6 +31,7 @@ func main() {
 	statusFlag := flag.Bool("status", false, "Output current status emoji")
 	statsFlag := flag.Bool("stats", false, "Display detailed pet statistics")
 	chaseFlag := flag.Bool("chase", false, "Watch your pet chase a butterfly")
+	chaseSeed := flag.Int64("chase-seed", 0, "Seed for chase mode RNG (0 = use current time)")
 	flag.Parse()
 
 	if *statsFlag {
@@ -52,7 +53,7 @@ func main() {
 	}
 
 	if *chaseFlag {
-		chase.Run()
+		chase.Run(*chaseSeed)
 		return
 	}
 

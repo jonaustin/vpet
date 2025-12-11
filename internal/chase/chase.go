@@ -3,11 +3,13 @@ package chase
 import (
 	"log"
 	"math"
+	"math/rand"
 	"os"
 	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/mattn/go-runewidth"
 
 	"vpet/internal/pet"
 )
@@ -15,12 +17,30 @@ import (
 const (
 	tickInterval   = 70 * time.Millisecond
 	minVisibleRows = 6
+
+	// Movement speeds in columns per second
+	targetSpeedDefault = 8.0  // butterfly moves 8 columns/second
+	targetSpeedFast    = 12.0 // mouse moves 12 columns/second
+	targetSpeedSlow    = 6.0  // ball moves 6 columns/second
+	petSpeed           = 10.0 // pet moves 10 columns/second
 )
+
+// RNG is the seeded random number generator for chase mode
+// Exposed for testing and future features (pickups, boss targets, etc.)
+var RNG *rand.Rand
 
 // getChaseEmoji returns the appropriate emoji for the pet during chase based on its state
 func getChaseEmoji(p pet.Pet, distX, distY int) string {
 	// Near-catch window: show excitement when the pet closes most of the gap
-	if absInt(distX) <= 3 && absInt(distY) <= 1 {
+	absX := distX
+	if absX < 0 {
+		absX = -absX
+	}
+	absY := distY
+	if absY < 0 {
+		absY = -absY
+	}
+	if absX <= 3 && absY <= 1 {
 		return pet.StatusEmojiExcited // Excited about to catch
 	}
 
@@ -51,46 +71,54 @@ func getChaseEmoji(p pet.Pet, distX, distY int) string {
 type Target struct {
 	Emoji string
 	Name  string
-	Speed int // Frames to move 1 position
+	Speed float64 // Columns per second
 }
 
 // Available targets (extensible)
 var Targets = map[string]Target{
-	"butterfly": {Emoji: "🦋", Name: "butterfly", Speed: 3},
-	"ball":      {Emoji: "⚽", Name: "ball", Speed: 4},
-	"mouse":     {Emoji: "🐁", Name: "mouse", Speed: 2},
+	"butterfly": {Emoji: "🦋", Name: "butterfly", Speed: targetSpeedDefault},
+	"ball":      {Emoji: "⚽", Name: "ball", Speed: targetSpeedSlow},
+	"mouse":     {Emoji: "🐁", Name: "mouse", Speed: targetSpeedFast},
 }
 
 // Model is the Bubble Tea model for chase animation
 type Model struct {
-	Pet        pet.Pet
-	Target     Target
-	TermWidth  int
-	TermHeight int
-	PetPosX    int
-	PetPosY    int
-	TargetPosX int
-	TargetPosY int
-	Frame      int
+	Pet            pet.Pet
+	Target         Target
+	TermWidth      int
+	TermHeight     int
+	PetPosX        float64 // Using float64 for smooth delta-time movement
+	PetPosY        float64
+	TargetPosX     float64
+	TargetPosY     float64
+	LastUpdateTime time.Time
+	ElapsedTime    float64 // Total elapsed time in seconds
 }
 
 type animTickMsg time.Time
 
 // Run starts the chase animation
-func Run() {
+func Run(seed int64) {
+	// Initialize RNG with seed (0 = use current time)
+	if seed == 0 {
+		seed = time.Now().UnixNano()
+	}
+	RNG = rand.New(rand.NewSource(seed))
+
 	p := pet.LoadState()
 	target := Targets["butterfly"]
 
 	model := Model{
-		Pet:        p,
-		Target:     target,
-		PetPosX:    0,
-		PetPosY:    0,
-		TargetPosX: 5,
-		TargetPosY: 0,
-		Frame:      0,
-		TermWidth:  0, // set on first resize event
-		TermHeight: 0, // set on first resize event
+		Pet:            p,
+		Target:         target,
+		PetPosX:        0,
+		PetPosY:        0,
+		TargetPosX:     5,
+		TargetPosY:     0,
+		LastUpdateTime: time.Now(),
+		ElapsedTime:    0,
+		TermWidth:      0, // set on first resize event
+		TermHeight:     0, // set on first resize event
 	}
 
 	program := tea.NewProgram(model, tea.WithAltScreen())
@@ -104,13 +132,6 @@ func tick() tea.Cmd {
 	return tea.Tick(tickInterval, func(t time.Time) tea.Msg {
 		return animTickMsg(t)
 	})
-}
-
-func absInt(v int) int {
-	if v < 0 {
-		return -v
-	}
-	return v
 }
 
 // Init implements tea.Model
@@ -134,52 +155,59 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case animTickMsg:
-		m.Frame++
-
 		if m.TermWidth == 0 || m.TermHeight == 0 {
+			m.LastUpdateTime = time.Time(msg)
 			return m, tick()
 		}
 
-		// Move target (butterfly) - moves every N frames based on speed
-		if m.Frame%m.Target.Speed == 0 {
-			m.TargetPosX++
+		// Calculate delta time since last update
+		now := time.Time(msg)
+		deltaTime := now.Sub(m.LastUpdateTime).Seconds()
+		m.LastUpdateTime = now
+		m.ElapsedTime += deltaTime
 
-			if m.TargetPosX >= m.maxX() {
-				return m, tea.Quit
-			}
+		// Move target horizontally based on speed
+		m.TargetPosX += m.Target.Speed * deltaTime
 
-			// Vertical flutter pattern using sine wave
-			height := float64(m.visibleRows())
-			amplitude := height / 3.0
-			centerY := height / 2.0
-			frequency := 0.2
-
-			newY := centerY + amplitude*math.Sin(float64(m.TargetPosX)*frequency)
-			m.TargetPosY = int(newY)
-
-			m.clampPositions()
+		if m.TargetPosX >= float64(m.maxX()) {
+			return m, tea.Quit
 		}
+
+		// Vertical flutter pattern using sine wave
+		height := float64(m.visibleRows())
+		amplitude := height / 3.0
+		centerY := height / 2.0
+		frequency := 0.2
+
+		m.TargetPosY = centerY + amplitude*math.Sin(m.TargetPosX*frequency)
 
 		// Move pet - follows butterfly in 2D space
-		if m.Frame%2 == 0 {
-			distX := m.TargetPosX - m.PetPosX
-			distY := m.TargetPosY - m.PetPosY
+		distX := m.TargetPosX - m.PetPosX
+		distY := m.TargetPosY - m.PetPosY
 
-			if distX > 3 {
-				m.PetPosX++
+		// Move independently on each axis based on distance thresholds
+		if math.Abs(distX) > 3 {
+			// Move toward target on X axis
+			if distX > 0 {
+				m.PetPosX += petSpeed * deltaTime
+			} else {
+				m.PetPosX -= petSpeed * deltaTime
 			}
-
-			if distY > 1 {
-				m.PetPosY++
-			} else if distY < -1 {
-				m.PetPosY--
-			}
-
-			m.clampPositions()
 		}
 
+		if math.Abs(distY) > 1 {
+			// Move toward target on Y axis
+			if distY > 0 {
+				m.PetPosY += petSpeed * deltaTime
+			} else {
+				m.PetPosY -= petSpeed * deltaTime
+			}
+		}
+
+		m.clampPositions()
+
 		// Catch condition: overlapping X and same row
-		if absInt(m.TargetPosX-m.PetPosX) <= 1 && m.TargetPosY == m.PetPosY {
+		if math.Abs(m.TargetPosX-m.PetPosX) <= 1 && int(m.TargetPosY) == int(m.PetPosY) {
 			return m, tea.Quit
 		}
 
@@ -198,8 +226,8 @@ func (m Model) View() string {
 	rows := m.visibleRows()
 
 	// Calculate distance to determine emoji
-	distX := m.TargetPosX - m.PetPosX
-	distY := m.TargetPosY - m.PetPosY
+	distX := int(m.TargetPosX - m.PetPosX)
+	distY := int(m.TargetPosY - m.PetPosY)
 	petEmoji := getChaseEmoji(m.Pet, distX, distY)
 
 	// Build 2D grid for animation
@@ -211,25 +239,28 @@ func (m Model) View() string {
 		}
 	}
 
-	// Place target at its 2D position
-	if m.TargetPosY >= 0 && m.TargetPosY < rows && m.TargetPosX >= 0 && m.TargetPosX < m.TermWidth-2 {
-		targetRunes := []rune(m.Target.Emoji)
-		for i, r := range targetRunes {
-			if m.TargetPosX+i < m.TermWidth {
-				grid[m.TargetPosY][m.TargetPosX+i] = r
+	// Helper function to place emoji with proper width handling
+	placeEmoji := func(emoji string, x, y int) {
+		if y < 0 || y >= rows-1 || x < 0 {
+			return
+		}
+
+		col := x
+		for _, r := range emoji {
+			width := runewidth.RuneWidth(r)
+			if col+width > m.TermWidth {
+				break
 			}
+			grid[y][col] = r
+			col += width
 		}
 	}
 
+	// Place target at its 2D position (convert float to int for rendering)
+	placeEmoji(m.Target.Emoji, int(m.TargetPosX), int(m.TargetPosY))
+
 	// Place pet at its 2D position
-	if m.PetPosY >= 0 && m.PetPosY < rows && m.PetPosX >= 0 && m.PetPosX < m.TermWidth-2 {
-		petRunes := []rune(petEmoji)
-		for i, r := range petRunes {
-			if m.PetPosX+i < m.TermWidth {
-				grid[m.PetPosY][m.PetPosX+i] = r
-			}
-		}
-	}
+	placeEmoji(petEmoji, int(m.PetPosX), int(m.PetPosY))
 
 	// Convert grid to string
 	var result strings.Builder
@@ -249,31 +280,34 @@ func (m *Model) clampPositions() {
 		return
 	}
 
+	maxX := float64(m.maxX())
+	maxY := float64(rows - 1)
+
 	if m.PetPosX < 0 {
 		m.PetPosX = 0
 	}
-	if m.PetPosX >= m.maxX() {
-		m.PetPosX = m.maxX()
+	if m.PetPosX >= maxX {
+		m.PetPosX = maxX
 	}
 	if m.TargetPosX < 0 {
 		m.TargetPosX = 0
 	}
-	if m.TargetPosX >= m.maxX() {
-		m.TargetPosX = m.maxX()
+	if m.TargetPosX >= maxX {
+		m.TargetPosX = maxX
 	}
 
 	if m.PetPosY < 0 {
 		m.PetPosY = 0
 	}
-	if m.PetPosY >= rows {
-		m.PetPosY = rows - 1
+	if m.PetPosY >= maxY {
+		m.PetPosY = maxY
 	}
 
 	if m.TargetPosY < 0 {
 		m.TargetPosY = 0
 	}
-	if m.TargetPosY >= rows {
-		m.TargetPosY = rows - 1
+	if m.TargetPosY >= maxY {
+		m.TargetPosY = maxY
 	}
 }
 

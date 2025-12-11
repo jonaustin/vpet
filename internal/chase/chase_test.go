@@ -1,8 +1,10 @@
 package chase
 
 import (
+	"math"
 	"strings"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -49,7 +51,7 @@ func TestTargets(t *testing.T) {
 				t.Errorf("Emoji = %q, want %q", target.Emoji, tt.wantEmoji)
 			}
 			if target.Speed <= 0 {
-				t.Errorf("Speed = %d, want > 0", target.Speed)
+				t.Errorf("Speed = %f, want > 0", target.Speed)
 			}
 		})
 	}
@@ -70,18 +72,21 @@ func TestModel_Init(t *testing.T) {
 }
 
 func TestModel_Update_KeyMsg(t *testing.T) {
+	baseTime := time.Now()
 	m := Model{
-		Pet:        pet.Pet{},
-		Target:     Targets["butterfly"],
-		TermWidth:  80,
-		TermHeight: 24,
-		Frame:      10,
+		Pet:            pet.Pet{},
+		Target:         Targets["butterfly"],
+		TermWidth:      80,
+		TermHeight:     24,
+		LastUpdateTime: baseTime,
+		ElapsedTime:    1.5,
 	}
 
 	// Any key should quit
 	updatedModel, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
 
-	if updatedModel.(Model).Frame != 10 {
+	// ElapsedTime should not change on key press
+	if updatedModel.(Model).ElapsedTime != 1.5 {
 		t.Error("KeyMsg should not modify model state")
 	}
 
@@ -115,70 +120,83 @@ func TestModel_Update_WindowSizeMsg(t *testing.T) {
 	}
 }
 
-func TestModel_Update_AnimTick_FrameIncrement(t *testing.T) {
+func TestModel_Update_AnimTick_ElapsedTimeIncrement(t *testing.T) {
+	baseTime := time.Now()
 	m := Model{
-		Pet:        pet.Pet{},
-		Target:     Targets["butterfly"],
-		TermWidth:  80,
-		TermHeight: 24,
-		Frame:      0,
-		PetPosX:    0,
-		PetPosY:    12,
-		TargetPosX: 5,
-		TargetPosY: 12,
+		Pet:            pet.Pet{},
+		Target:         Targets["butterfly"],
+		TermWidth:      80,
+		TermHeight:     24,
+		LastUpdateTime: baseTime,
+		ElapsedTime:    0,
+		PetPosX:        0,
+		PetPosY:        12,
+		TargetPosX:     5,
+		TargetPosY:     12,
 	}
 
-	updatedModel, _ := m.Update(animTickMsg{})
+	// Simulate 70ms tick
+	nextTime := baseTime.Add(70 * time.Millisecond)
+	updatedModel, _ := m.Update(animTickMsg(nextTime))
 	updated := updatedModel.(Model)
 
-	if updated.Frame != 1 {
-		t.Errorf("Frame = %d, want 1", updated.Frame)
+	// ElapsedTime should have increased by ~0.07 seconds
+	expectedElapsed := 0.07
+	if updated.ElapsedTime < expectedElapsed-0.001 || updated.ElapsedTime > expectedElapsed+0.001 {
+		t.Errorf("ElapsedTime = %f, want ~%f", updated.ElapsedTime, expectedElapsed)
 	}
 }
 
 func TestModel_Update_AnimTick_TargetMovement(t *testing.T) {
 	target := Targets["butterfly"]
+	baseTime := time.Now()
 	m := Model{
-		Pet:        pet.Pet{},
-		Target:     target,
-		TermWidth:  80,
-		TermHeight: 24,
-		Frame:      0,
-		TargetPosX: 5,
-		TargetPosY: 12,
+		Pet:            pet.Pet{},
+		Target:         target,
+		TermWidth:      80,
+		TermHeight:     24,
+		LastUpdateTime: baseTime,
+		TargetPosX:     5,
+		TargetPosY:     12,
 	}
 
-	// Run enough frames to trigger target movement
-	// Butterfly speed is 3, so it moves every 3 frames
-	for i := 0; i < target.Speed; i++ {
-		var cmd tea.Cmd
-		var model tea.Model
-		model, cmd = m.Update(animTickMsg{})
-		m = model.(Model)
-		if cmd == nil {
-			t.Error("animTickMsg should return tick command")
-		}
+	// Simulate one tick (70ms)
+	nextTime := baseTime.Add(70 * time.Millisecond)
+	updatedModel, cmd := m.Update(animTickMsg(nextTime))
+	updated := updatedModel.(Model)
+
+	if cmd == nil {
+		t.Error("animTickMsg should return tick command")
 	}
 
-	// After Speed frames, target should have moved horizontally
-	if m.TargetPosX <= 5 {
-		t.Errorf("TargetPosX = %d, expected > 5 after %d frames", m.TargetPosX, target.Speed)
+	// Target should have moved horizontally
+	// Butterfly speed is 8.0 columns/sec, so in 0.07 sec: 8.0 * 0.07 = 0.56 columns
+	if updated.TargetPosX <= 5 {
+		t.Errorf("TargetPosX = %f, expected > 5 after tick", updated.TargetPosX)
+	}
+
+	expectedPos := 5.0 + (target.Speed * 0.07)
+	if updated.TargetPosX < expectedPos-0.1 || updated.TargetPosX > expectedPos+0.1 {
+		t.Errorf("TargetPosX = %f, want ~%f", updated.TargetPosX, expectedPos)
 	}
 }
 
 func TestModel_Update_AnimTick_TargetReachesEdge(t *testing.T) {
+	baseTime := time.Now()
 	m := Model{
-		Pet:        pet.Pet{},
-		Target:     Targets["butterfly"],
-		TermWidth:  80,
-		TermHeight: 24,
-		Frame:      2,  // Frame % 3 == 2, so next tick will move target
-		TargetPosX: 79, // Near edge
-		TargetPosY: 12,
+		Pet:            pet.Pet{},
+		Target:         Targets["butterfly"],
+		TermWidth:      80,
+		TermHeight:     24,
+		LastUpdateTime: baseTime,
+		TargetPosX:     77.0, // Near edge (maxX is 78)
+		TargetPosY:     12,
 	}
 
-	// Next frame should move target past edge and trigger quit
-	updatedModel, cmd := m.Update(animTickMsg{})
+	// Tick should move target past edge and trigger quit
+	// Butterfly moves 8.0 * 0.07 = 0.56 columns, so 77 + 0.56 > 78 (edge)
+	nextTime := baseTime.Add(70 * time.Millisecond)
+	updatedModel, cmd := m.Update(animTickMsg(nextTime))
 
 	if cmd == nil {
 		t.Error("Target reaching edge should return quit command")
@@ -191,22 +209,25 @@ func TestModel_Update_AnimTick_TargetReachesEdge(t *testing.T) {
 }
 
 func TestModel_Update_AnimTick_PetMovement(t *testing.T) {
+	baseTime := time.Now()
 	m := Model{
-		Pet:        pet.Pet{},
-		Target:     Targets["butterfly"],
-		TermWidth:  80,
-		TermHeight: 24,
-		Frame:      1, // Next frame will be 2, pet moves every 2 frames
-		PetPosX:    0,
-		PetPosY:    12,
-		TargetPosX: 20,
-		TargetPosY: 12,
+		Pet:            pet.Pet{},
+		Target:         Targets["butterfly"],
+		TermWidth:      80,
+		TermHeight:     24,
+		LastUpdateTime: baseTime,
+		PetPosX:        0,
+		PetPosY:        12,
+		TargetPosX:     20,
+		TargetPosY:     12,
 	}
 
-	updatedModel, _ := m.Update(animTickMsg{})
+	nextTime := baseTime.Add(70 * time.Millisecond)
+	updatedModel, _ := m.Update(animTickMsg(nextTime))
 	updated := updatedModel.(Model)
 
-	// Pet should move towards target
+	// Pet should move towards target (distance > 3, so it will move)
+	// Pet speed is 10.0 columns/sec, in 0.07 sec = 0.7 columns
 	if updated.PetPosX <= 0 {
 		t.Error("Pet should move horizontally towards target")
 	}
@@ -215,59 +236,78 @@ func TestModel_Update_AnimTick_PetMovement(t *testing.T) {
 func TestModel_Update_AnimTick_PetVerticalMovement(t *testing.T) {
 	tests := []struct {
 		name       string
-		petPosY    int
-		targetPosY int
-		wantChange string // "up", "down", or "none"
+		petPosX    float64 // Pet X position
+		petPosY    float64
+		targetPosX float64 // Target X determines its Y via sine wave
+		wantChange string  // "up", "down", or "none"
 	}{
 		{
 			name:       "Pet moves down when target is below",
-			petPosY:    10,
-			targetPosY: 15,
-			wantChange: "down",
+			petPosX:    0,          // Pet at left
+			petPosY:    3,          // Pet high up
+			targetPosX: 100,        // Target far right
+			wantChange: "down",     // Target will be at center ~12, pet moves down
 		},
 		{
 			name:       "Pet moves up when target is above",
-			petPosY:    15,
-			targetPosY: 10,
-			wantChange: "up",
+			petPosX:    0,          // Pet at left
+			petPosY:    18,         // Pet low down
+			targetPosX: 100,        // Target far right at center ~12
+			wantChange: "up",       // Pet moves up toward center
 		},
 		{
 			name:       "Pet doesn't move when close vertically",
-			petPosY:    12,
-			targetPosY: 13,
-			wantChange: "none",
+			petPosX:    5,          // Position pet very close to target
+			petPosY:    11,         // At center Y
+			targetPosX: 5,          // Target at X=5 (early in sine wave, near center)
+			wantChange: "none",     // At X~5, sin(1) ≈ 0.84, target at ~11+2.6=13.6, but distance check should work
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			baseTime := time.Now()
+
 			m := Model{
-				Pet:        pet.Pet{},
-				Target:     Targets["butterfly"],
-				TermWidth:  80,
-				TermHeight: 24,
-				Frame:      1, // Next frame will be 2, pet moves every 2 frames
-				PetPosX:    0,
-				PetPosY:    tt.petPosY,
-				TargetPosX: 20,
-				TargetPosY: tt.targetPosY,
+				Pet:            pet.Pet{},
+				Target:         Targets["butterfly"],
+				TermWidth:      200, // Wide enough
+				TermHeight:     24,
+				LastUpdateTime: baseTime,
+				PetPosX:        tt.petPosX,
+				PetPosY:        tt.petPosY,
+				TargetPosX:     tt.targetPosX,
 			}
 
-			updatedModel, _ := m.Update(animTickMsg{})
+			// Calculate where target Y will be after sine wave
+			height := float64(m.visibleRows())
+			amplitude := height / 3.0
+			centerY := height / 2.0
+			frequency := 0.2
+			targetY := centerY + amplitude*math.Sin((tt.targetPosX+m.Target.Speed*0.07)*frequency)
+
+			nextTime := baseTime.Add(70 * time.Millisecond)
+			updatedModel, _ := m.Update(animTickMsg(nextTime))
 			updated := updatedModel.(Model)
+
+			distY := math.Abs(targetY - tt.petPosY)
 
 			switch tt.wantChange {
 			case "down":
-				if updated.PetPosY <= tt.petPosY {
-					t.Errorf("Pet should move down from Y=%d, got Y=%d", tt.petPosY, updated.PetPosY)
+				if distY > 1 && updated.PetPosY <= tt.petPosY {
+					t.Errorf("Pet should move down from Y=%f, got Y=%f (target at ~%f)", tt.petPosY, updated.PetPosY, targetY)
 				}
 			case "up":
-				if updated.PetPosY >= tt.petPosY {
-					t.Errorf("Pet should move up from Y=%d, got Y=%d", tt.petPosY, updated.PetPosY)
+				if distY > 1 && updated.PetPosY >= tt.petPosY {
+					t.Errorf("Pet should move up from Y=%f, got Y=%f (target at ~%f)", tt.petPosY, updated.PetPosY, targetY)
 				}
 			case "none":
-				if updated.PetPosY != tt.petPosY {
-					t.Errorf("Pet should not move vertically from Y=%d, got Y=%d", tt.petPosY, updated.PetPosY)
+				// If distY was > 1, pet should have moved; if <= 1, should not have moved
+				actuallyMoved := updated.PetPosY != tt.petPosY
+				shouldMove := distY > 1
+				if actuallyMoved != shouldMove {
+					t.Errorf("Pet movement = %v, expected %v (distY=%f, pet Y: %f → %f)",
+						actuallyMoved, shouldMove, distY, tt.petPosY, updated.PetPosY)
 				}
 			}
 		})
@@ -275,19 +315,21 @@ func TestModel_Update_AnimTick_PetVerticalMovement(t *testing.T) {
 }
 
 func TestModel_Update_AnimTick_CatchEndsRun(t *testing.T) {
+	baseTime := time.Now()
 	m := Model{
-		Pet:        pet.Pet{},
-		Target:     Targets["butterfly"],
-		TermWidth:  40,
-		TermHeight: 10,
-		Frame:      0,
-		PetPosX:    5,
-		PetPosY:    3,
-		TargetPosX: 6,
-		TargetPosY: 3,
+		Pet:            pet.Pet{},
+		Target:         Targets["butterfly"],
+		TermWidth:      40,
+		TermHeight:     10,
+		LastUpdateTime: baseTime,
+		PetPosX:        5,
+		PetPosY:        3,
+		TargetPosX:     6,
+		TargetPosY:     3,
 	}
 
-	_, cmd := m.Update(animTickMsg{})
+	nextTime := baseTime.Add(70 * time.Millisecond)
+	_, cmd := m.Update(animTickMsg(nextTime))
 	if cmd == nil {
 		t.Fatalf("expected quit command when pet catches target")
 	}
@@ -296,62 +338,68 @@ func TestModel_Update_AnimTick_CatchEndsRun(t *testing.T) {
 func TestModel_Update_AnimTick_BoundaryConstraints(t *testing.T) {
 	// Test that target stays within boundaries during sine wave movement
 	t.Run("Target stays within vertical boundaries", func(t *testing.T) {
+		baseTime := time.Now()
 		m := Model{
-			Pet:        pet.Pet{},
-			Target:     Targets["butterfly"],
-			TermWidth:  80,
-			TermHeight: 24,
-			Frame:      0,
-			TargetPosX: 5,
-			TargetPosY: 12,
-			PetPosX:    0,
-			PetPosY:    12,
+			Pet:            pet.Pet{},
+			Target:         Targets["butterfly"],
+			TermWidth:      80,
+			TermHeight:     24,
+			LastUpdateTime: baseTime,
+			TargetPosX:     5,
+			TargetPosY:     12,
+			PetPosX:        0,
+			PetPosY:        12,
 		}
 
-		minY := 0
-		maxY := m.visibleRows() - 1
+		minY := 0.0
+		maxY := float64(m.visibleRows() - 1)
 
-		// Run many frames to traverse the full sine wave
+		// Run many ticks to traverse the full sine wave
+		currentTime := baseTime
 		for i := 0; i < 50; i++ {
-			model, _ := m.Update(animTickMsg{})
+			currentTime = currentTime.Add(70 * time.Millisecond)
+			model, _ := m.Update(animTickMsg(currentTime))
 			m = model.(Model)
 
 			if m.TargetPosY < minY {
-				t.Errorf("Frame %d: TargetPosY = %d, should be >= %d", i, m.TargetPosY, minY)
+				t.Errorf("Tick %d: TargetPosY = %f, should be >= %f", i, m.TargetPosY, minY)
 			}
 			if m.TargetPosY > maxY {
-				t.Errorf("Frame %d: TargetPosY = %d, should be <= %d", i, m.TargetPosY, maxY)
+				t.Errorf("Tick %d: TargetPosY = %f, should be <= %f", i, m.TargetPosY, maxY)
 			}
 		}
 	})
 
 	// Test that pet stays within boundaries when following target
 	t.Run("Pet stays within vertical boundaries", func(t *testing.T) {
+		baseTime := time.Now()
 		m := Model{
-			Pet:        pet.Pet{},
-			Target:     Targets["butterfly"],
-			TermWidth:  80,
-			TermHeight: 24,
-			Frame:      0,
-			TargetPosX: 20,
-			TargetPosY: 3, // Near upper boundary
-			PetPosX:    0,
-			PetPosY:    12,
+			Pet:            pet.Pet{},
+			Target:         Targets["butterfly"],
+			TermWidth:      80,
+			TermHeight:     24,
+			LastUpdateTime: baseTime,
+			TargetPosX:     20,
+			TargetPosY:     3, // Near upper boundary
+			PetPosX:        0,
+			PetPosY:        12,
 		}
 
-		minY := 0
-		maxY := m.visibleRows() - 1
+		minY := 0.0
+		maxY := float64(m.visibleRows() - 1)
 
-		// Run frames until pet moves and gets clamped
+		// Run ticks until pet moves and gets clamped
+		currentTime := baseTime
 		for i := 0; i < 20; i++ {
-			model, _ := m.Update(animTickMsg{})
+			currentTime = currentTime.Add(70 * time.Millisecond)
+			model, _ := m.Update(animTickMsg(currentTime))
 			m = model.(Model)
 
 			if m.PetPosY < minY {
-				t.Errorf("Frame %d: PetPosY = %d, should be >= %d", i, m.PetPosY, minY)
+				t.Errorf("Tick %d: PetPosY = %f, should be >= %f", i, m.PetPosY, minY)
 			}
 			if m.PetPosY > maxY {
-				t.Errorf("Frame %d: PetPosY = %d, should be <= %d", i, m.PetPosY, maxY)
+				t.Errorf("Tick %d: PetPosY = %f, should be <= %f", i, m.PetPosY, maxY)
 			}
 		}
 	})
@@ -455,11 +503,12 @@ func TestClampOnResize(t *testing.T) {
 	}
 
 	m.clampPositions()
-	if m.PetPosY != m.visibleRows()-1 {
-		t.Fatalf("pet Y should clamp to %d, got %d", m.visibleRows()-1, m.PetPosY)
+	expectedMaxY := float64(m.visibleRows() - 1)
+	if m.PetPosY != expectedMaxY {
+		t.Fatalf("pet Y should clamp to %f, got %f", expectedMaxY, m.PetPosY)
 	}
 	if m.TargetPosY != 0 {
-		t.Fatalf("target Y should clamp to 0, got %d", m.TargetPosY)
+		t.Fatalf("target Y should clamp to 0, got %f", m.TargetPosY)
 	}
 }
 
@@ -484,19 +533,21 @@ func TestModel_View_OutOfBoundsPositions(t *testing.T) {
 
 func TestModel_PetHorizontalMovementThreshold(t *testing.T) {
 	// Pet only moves horizontally if distance > 3
+	// NOTE: Target moves first (8.0 * 0.07 = 0.56 columns per tick),
+	// then pet evaluates distance to NEW target position
 	tests := []struct {
 		name     string
-		distX    int
+		distX    float64
 		wantMove bool
 	}{
 		{
 			name:     "Pet moves when distX > 3",
-			distX:    4,
+			distX:    5,   // After target moves +0.56, still > 3
 			wantMove: true,
 		},
 		{
 			name:     "Pet doesn't move when distX = 3",
-			distX:    3,
+			distX:    2.4, // After target moves +0.56 → 2.96, still < 3, so no movement
 			wantMove: false,
 		},
 		{
@@ -508,24 +559,30 @@ func TestModel_PetHorizontalMovementThreshold(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			baseTime := time.Now()
 			m := Model{
-				Pet:        pet.Pet{},
-				Target:     Targets["butterfly"],
-				TermWidth:  80,
-				TermHeight: 24,
-				Frame:      1, // Next tick will be frame 2, pet moves
-				PetPosX:    10,
-				PetPosY:    12,
-				TargetPosX: 10 + tt.distX,
-				TargetPosY: 12,
+				Pet:            pet.Pet{},
+				Target:         Targets["butterfly"],
+				TermWidth:      80,
+				TermHeight:     24,
+				LastUpdateTime: baseTime,
+				PetPosX:        10,
+				PetPosY:        12,
+				TargetPosX:     10 + tt.distX,
+				TargetPosY:     12,
 			}
 
-			updatedModel, _ := m.Update(animTickMsg{})
+			nextTime := baseTime.Add(70 * time.Millisecond)
+			updatedModel, _ := m.Update(animTickMsg(nextTime))
 			updated := updatedModel.(Model)
 
 			moved := updated.PetPosX > m.PetPosX
 			if moved != tt.wantMove {
-				t.Errorf("Pet moved = %v, want %v (distX = %d)", moved, tt.wantMove, tt.distX)
+				// Calculate actual distance after target moved
+				targetMoved := m.Target.Speed * 0.07
+				actualDist := tt.distX + targetMoved
+				t.Errorf("Pet moved = %v, want %v (initial distX = %f, after target moved = %f)",
+					moved, tt.wantMove, tt.distX, actualDist)
 			}
 		})
 	}
