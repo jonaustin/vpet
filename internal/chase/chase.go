@@ -5,6 +5,7 @@ import (
 	"math"
 	"math/rand"
 	"os"
+	"sort"
 	"strings"
 	"time"
 
@@ -85,6 +86,7 @@ var Targets = map[string]Target{
 type Model struct {
 	Pet            pet.Pet
 	Target         Target
+	TargetPhase    float64
 	TermWidth      int
 	TermHeight     int
 	PetPosX        float64 // Using float64 for smooth delta-time movement
@@ -97,20 +99,28 @@ type Model struct {
 
 type animTickMsg time.Time
 
-// Run starts the chase animation
-func Run(seed int64) {
+func initRNG(seed int64) *rand.Rand {
 	// Initialize RNG with seed (0 = use current time)
 	if seed == 0 {
 		seed = time.Now().UnixNano()
 	}
-	RNG = rand.New(rand.NewSource(seed))
+	return rand.New(rand.NewSource(seed))
+}
 
-	p := pet.LoadState()
+func newModelWithPet(p pet.Pet, rng *rand.Rand) Model {
 	target := Targets["butterfly"]
+	targetPhase := 0.0
 
-	model := Model{
+	if rng != nil {
+		target = chooseTarget(rng)
+		// Phase shift the sine wave so seed changes path shape
+		targetPhase = rng.Float64() * 2 * math.Pi
+	}
+
+	return Model{
 		Pet:            p,
 		Target:         target,
+		TargetPhase:    targetPhase,
 		PetPosX:        0,
 		PetPosY:        0,
 		TargetPosX:     5,
@@ -120,6 +130,26 @@ func Run(seed int64) {
 		TermWidth:      0, // set on first resize event
 		TermHeight:     0, // set on first resize event
 	}
+}
+
+func chooseTarget(rng *rand.Rand) Target {
+	keys := make([]string, 0, len(Targets))
+	for key := range Targets {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+
+	index := rng.Intn(len(keys))
+	return Targets[keys[index]]
+}
+
+// Run starts the chase animation
+func Run(seed int64) {
+	rng := initRNG(seed)
+	RNG = rng
+
+	p := pet.LoadState()
+	model := newModelWithPet(p, rng)
 
 	program := tea.NewProgram(model, tea.WithAltScreen())
 	if _, err := program.Run(); err != nil {
@@ -179,7 +209,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		centerY := height / 2.0
 		frequency := 0.2
 
-		m.TargetPosY = centerY + amplitude*math.Sin(m.TargetPosX*frequency)
+		m.TargetPosY = centerY + amplitude*math.Sin(m.TargetPosX*frequency+m.TargetPhase)
 
 		// Move pet - follows butterfly in 2D space
 		distX := m.TargetPosX - m.PetPosX

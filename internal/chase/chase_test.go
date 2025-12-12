@@ -2,6 +2,7 @@ package chase
 
 import (
 	"math"
+	"math/rand"
 	"strings"
 	"testing"
 	"time"
@@ -10,6 +11,35 @@ import (
 
 	"vpet/internal/pet"
 )
+
+func TestNewModelWithPet_SeedDeterministic(t *testing.T) {
+	p := pet.Pet{}
+	seed := int64(42)
+
+	m1 := newModelWithPet(p, rand.New(rand.NewSource(seed)))
+	m2 := newModelWithPet(p, rand.New(rand.NewSource(seed)))
+
+	if m1.Target.Name != m2.Target.Name {
+		t.Fatalf("expected target to be deterministic for same seed, got %s vs %s", m1.Target.Name, m2.Target.Name)
+	}
+	if m1.TargetPhase != m2.TargetPhase {
+		t.Fatalf("expected target phase to match for same seed, got %f vs %f", m1.TargetPhase, m2.TargetPhase)
+	}
+}
+
+func TestNewModelWithPet_SeedInfluencesTargetAndPath(t *testing.T) {
+	p := pet.Pet{}
+
+	m1 := newModelWithPet(p, rand.New(rand.NewSource(1)))
+	m2 := newModelWithPet(p, rand.New(rand.NewSource(2)))
+
+	sameTarget := m1.Target.Name == m2.Target.Name
+	phaseDelta := math.Abs(m1.TargetPhase - m2.TargetPhase)
+
+	if sameTarget && phaseDelta < 1e-9 {
+		t.Fatalf("different seeds should change target selection or path (phase), got same target %s and phase %f", m1.Target.Name, phaseDelta)
+	}
+}
 
 func TestTargets(t *testing.T) {
 	tests := []struct {
@@ -243,24 +273,24 @@ func TestModel_Update_AnimTick_PetVerticalMovement(t *testing.T) {
 	}{
 		{
 			name:       "Pet moves down when target is below",
-			petPosX:    0,          // Pet at left
-			petPosY:    3,          // Pet high up
-			targetPosX: 100,        // Target far right
-			wantChange: "down",     // Target will be at center ~12, pet moves down
+			petPosX:    0,      // Pet at left
+			petPosY:    3,      // Pet high up
+			targetPosX: 100,    // Target far right
+			wantChange: "down", // Target will be at center ~12, pet moves down
 		},
 		{
 			name:       "Pet moves up when target is above",
-			petPosX:    0,          // Pet at left
-			petPosY:    18,         // Pet low down
-			targetPosX: 100,        // Target far right at center ~12
-			wantChange: "up",       // Pet moves up toward center
+			petPosX:    0,    // Pet at left
+			petPosY:    18,   // Pet low down
+			targetPosX: 100,  // Target far right at center ~12
+			wantChange: "up", // Pet moves up toward center
 		},
 		{
 			name:       "Pet doesn't move when close vertically",
-			petPosX:    5,          // Position pet very close to target
-			petPosY:    11,         // At center Y
-			targetPosX: 5,          // Target at X=5 (early in sine wave, near center)
-			wantChange: "none",     // At X~5, sin(1) ≈ 0.84, target at ~11+2.6=13.6, but distance check should work
+			petPosX:    5,      // Position pet very close to target
+			petPosY:    11,     // At center Y
+			targetPosX: 5,      // Target at X=5 (early in sine wave, near center)
+			wantChange: "none", // At X~5, sin(1) ≈ 0.84, target at ~11+2.6=13.6, but distance check should work
 		},
 	}
 
@@ -542,7 +572,7 @@ func TestModel_PetHorizontalMovementThreshold(t *testing.T) {
 	}{
 		{
 			name:     "Pet moves when distX > 3",
-			distX:    5,   // After target moves +0.56, still > 3
+			distX:    5, // After target moves +0.56, still > 3
 			wantMove: true,
 		},
 		{
